@@ -473,7 +473,7 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label fw-bold">🔗 O pega una URL de imagen:</label>
+                        <label class="form-label fw-bold"> O pega una URL de imagen:</label>
                         <input type="text" id="img-prod-url" class="form-control" placeholder="https://ejemplo.com/imagen.jpg" oninput="previsualizarURL()">
                         <small class="text-muted">Puedes subir tu imagen a <a href="https://imgur.com" target="_blank">imgur.com</a> y pegar el link directo</small>
                     </div>
@@ -520,7 +520,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // ✅ NUEVA URL ACTUALIZADA DE TU APPS SCRIPT
-        const API_URL = "https://script.google.com/macros/s/AKfycbzDA2lWc61PXXqW5uxb6HGVnUCbSt7T8UWXGYtrUJJuzEZ3e8iubdPqP_9S7vmTtYM3hg/exec";
+        const API_URL = "https://script.google.com/macros/s/AKfycbzMnAiTrtGtAloeEr45kXMoNEiZPM4JDi-6V46EpL9kAUBMNo0PIjp3dGNGv1FecPTW_Q/exec";
         const SESION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
         
         let usuarios = [];
@@ -1554,7 +1554,7 @@
                 
                 if (resultado.status === "success") {
                     bootstrap.Modal.getInstance(document.getElementById('modalCancelarPedidos')).hide();
-                    alert("✅ Pedido cancelado. Ingredientes reintegrados al stock.");
+                    alert("✅ Pedido cancelado. Total puesto en 0 e ingredientes reintegrados.");
                     actualizarVentasTurno();
                     cargarStock();
                     document.getElementById('criterio-cancelar').value = "";
