@@ -51,6 +51,11 @@
             transition: opacity 0.3s; z-index: 1000;
         }
         .indicador-actualizacion.mostrar { opacity: 1; }
+        .ultima-actualizacion {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-left: 10px;
+        }
     </style>
 </head>
 <body>
@@ -233,8 +238,21 @@
     <div class="modal fade" id="modalCancelarPedidos" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
-                <div class="modal-header bg-danger text-white"><h5 class="modal-title"><i class="fa-solid fa-ban"></i> Seleccionar Pedido a Cancelar</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
-                <div class="modal-body" id="modal-cancelar-body"><div class="text-center py-4"><div class="spinner-border text-danger"></div><p class="mt-2">Cargando pedidos...</p></div></div>
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-ban"></i> Seleccionar Pedido a Cancelar</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modal-cancelar-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <small class="text-muted">
+                            <i class="fa-solid fa-clock"></i> Última actualización: <span id="ultima-act-cancelar">--</span>
+                        </small>
+                        <button class="btn btn-sm btn-outline-primary" onclick="buscarPedidosParaCancelar(true)">
+                            <i class="fa-solid fa-rotate"></i> Refrescar
+                        </button>
+                    </div>
+                    <div id="lista-pedidos-cancelar"></div>
+                </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button></div>
             </div>
         </div>
@@ -273,6 +291,11 @@
         const INTERVALO_COCINA_MS = 5000;
         let usuarios = [], sesion = null, listaProductos = [], carrito = [], filtroActivo = 'ninguno', imagenBase64 = "";
         let intervaloCocina = null;
+        
+        // ✅ NUEVO: Caché de ventas para "Ver Pedidos" instantáneo
+        let ventasCache = [];
+        let ultimaActualizacionCache = null;
+        const TIEMPO_CACHE_MS = 10000; // 10 segundos de caché
 
         function verificarSesion() {
             const lastActivity = parseInt(localStorage.getItem('zoe_last_activity') || '0');
@@ -444,7 +467,6 @@
             let productosStr = carrito.map(function(i) { return i.cantidad + "x " + i.nombre; }).join(", ");
 
             try {
-                // 1️⃣ REGISTRAR VENTA EN SEGUNDO PLANO (sin await para que no bloquee)
                 fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -459,12 +481,14 @@
                           let resultado = JSON.parse(texto);
                           if (resultado.status === "success") {
                               console.log("✅ Venta registrada:", ordenId);
+                              // ✅ Invalidar caché después de registrar venta
+                              ventasCache = [];
+                              ultimaActualizacionCache = null;
                           }
                       } catch (e) { console.error("Error parseando respuesta:", e); }
                   })
                   .catch(err => console.error("❌ Error al registrar venta:", err));
 
-                // 2️⃣ CREAR Y ABRIR TICKET INMEDIATAMENTE
                 let itemsHTML = carrito.map(i => 
                     `<div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px;">
                         <span>${i.cantidad}x ${i.nombre}</span>
@@ -509,16 +533,14 @@
                     ventanaImpresion.document.write(ticketHTML);
                     ventanaImpresion.document.close();
                 } else {
-                    alert("⚠️ Por favor permite las ventanas emergentes para imprimir el ticket.");
+                    alert("️ Por favor permite las ventanas emergentes para imprimir el ticket.");
                     return;
                 }
 
-                // 3️⃣ LIMPIAR CARRITO INMEDIATAMENTE (sin esperar a la red)
                 carrito = [];
                 document.getElementById("cliente-nombre").value = "";
                 renderizarCarrito();
 
-                // 4️⃣ ACTUALIZAR DATOS EN SEGUNDO PLANO (sin bloquear la UI)
                 setTimeout(() => {
                     actualizarVentasTurno();
                     cargarProductosCaja();
@@ -528,7 +550,7 @@
                 }, 500);
 
             } catch (error) {
-                console.error("❌ ERROR REGISTRANDO VENTA:", error);
+                console.error(" ERROR REGISTRANDO VENTA:", error);
                 alert("❌ NO SE PUDO GUARDAR LA VENTA\n\nDetalle: " + error.message);
             }
         }
@@ -537,6 +559,10 @@
             try {
                 let res = await fetch(API_URL + "?action=getVentas");
                 let ventas = await res.json();
+                // ✅ Actualizar caché
+                ventasCache = ventas;
+                ultimaActualizacionCache = Date.now();
+                
                 let indiceCorte = Number(localStorage.getItem('zoe_indice_corte')) || 0;
                 if (indiceCorte > ventas.length) { indiceCorte = 0; localStorage.setItem('zoe_indice_corte', 0); }
                 let totalTurno = 0;
@@ -570,6 +596,10 @@
             try {
                 let res = await fetch(API_URL + "?action=getVentas");
                 let ventas = await res.json();
+                // ✅ Actualizar caché
+                ventasCache = ventas;
+                ultimaActualizacionCache = Date.now();
+                
                 let html = "";
                 
                 let pedidosVisibles = ventas.slice(-30).reverse().filter(v => {
@@ -661,6 +691,11 @@
                 try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error en la respuesta del servidor"); return; }
                 
                 if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo actualizar")); return; }
+                
+                // ✅ Invalidar caché
+                ventasCache = [];
+                ultimaActualizacionCache = null;
+                
                 await cargarPedidosCocina();
                 alert("✅ Pedido marcado como REALIZADO");
             } catch (e) { console.error(e); alert("❌ Error al actualizar.\n\n" + e.message); }
@@ -680,6 +715,10 @@
                 try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error en la respuesta del servidor"); return; }
                 
                 if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo archivar")); return; }
+                
+                // ✅ Invalidar caché
+                ventasCache = [];
+                ultimaActualizacionCache = null;
                 
                 console.log("✅ Pedido archivado, recargando vista...");
                 await cargarPedidosCocina();
@@ -930,52 +969,94 @@
                 document.getElementById("gasto-desc").value = "";
                 document.getElementById("gasto-monto").value = "";
                 calcularBalance();
-            } catch (e) { console.error(e); alert("❌ Error al guardar gasto.\n\n" + e.message); }
+            } catch (e) { console.error(e); alert(" Error al guardar gasto.\n\n" + e.message); }
         }
 
-        async function buscarPedidosParaCancelar() {
+        // ✅ FUNCIÓN OPTIMIZADA: "Ver Pedidos" con caché (INSTANTÁNEO)
+        async function buscarPedidosParaCancelar(forzarRecarga = false) {
             let criterio = document.getElementById('criterio-cancelar').value.toLowerCase().trim();
-            try {
-                let res = await fetch(API_URL + "?action=getVentas");
-                let ventas = await res.json();
-                let pedidosActivos = ventas.filter(v => {
-                    let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
-                    return estado !== "cancelado" && estado !== "archivado" && estado !== "realizado";
-                }).slice(-20).reverse();
-                if (criterio) {
-                    pedidosActivos = pedidosActivos.filter(v => String(v.ID_Orden || v.idOrden || "").toLowerCase().includes(criterio) || String(v.Cliente || v.Client || v.cliente || "").toLowerCase().includes(criterio));
+            
+            // ✅ Usar caché si está disponible y no se fuerza recarga
+            let ventas;
+            const ahora = Date.now();
+            const cacheValido = ventasCache.length > 0 && ultimaActualizacionCache && (ahora - ultimaActualizacionCache < TIEMPO_CACHE_MS);
+            
+            if (!forzarRecarga && cacheValido) {
+                console.log("⚡ Usando caché de ventas (instantáneo)");
+                ventas = ventasCache;
+            } else {
+                console.log("🔄 Cargando ventas desde servidor...");
+                try {
+                    let res = await fetch(API_URL + "?action=getVentas");
+                    ventas = await res.json();
+                    // ✅ Actualizar caché
+                    ventasCache = ventas;
+                    ultimaActualizacionCache = ahora;
+                } catch (e) {
+                    console.error(e);
+                    document.getElementById('lista-pedidos-cancelar').innerHTML = '<div class="text-center text-danger py-4">Error cargando pedidos</div>';
+                    return;
                 }
-                let html = "";
-                if (pedidosActivos.length === 0) {
-                    html = '<div class="text-center text-muted py-4"><i class="fa-solid fa-inbox fa-3x mb-3"></i><p>No hay pedidos activos para cancelar</p></div>';
-                } else {
-                    html = `<p class="text-muted mb-3">Selecciona el pedido que deseas cancelar:</p>`;
-                    pedidosActivos.forEach(v => {
-                        let ordenIdRaw = String(v.ID_Orden || v.idOrden || '');
-                        let ordenId = ordenIdRaw.replace(/[^0-9]/g, "");
-                        if (ordenId.length > 6) ordenId = ordenId.slice(-4);
-                        if (!ordenId) ordenId = "???";
-                        let cliente = v.Cliente || v.Client || v.cliente || "Sin cliente";
-                        let productosRaw = v.Productos || v.productos || "Sin productos";
-                        let total = v.Total || v.TOTAL || "0";
-                        let hora = v.Hora || v.hora || "";
-                        let productosLista = "";
-                        if (productosRaw && productosRaw !== "Sin productos") {
-                            let items = productosRaw.split(",").map(p => p.trim()).filter(p => p);
-                            productosLista = '<div class="kds-productos-lista">';
-                            items.forEach(item => {
-                                let match = item.match(/^(\d+)\s*x\s*(.+)$/i);
-                                if (match) productosLista += `<div class="kds-producto-item"><span class="kds-producto-cantidad">${match[1]}x</span><span>${match[2].trim()}</span></div>`;
-                                else productosLista += `<div class="kds-producto-item">${item}</div>`;
-                            });
-                            productosLista += '</div>';
-                        }
-                        html += `<div class="card cancelar-card shadow-sm"><div class="card-body py-2"><div class="d-flex justify-content-between align-items-center mb-2"><h6 class="orden-numero mb-0">Orden #${ordenId}</h6><span class="badge bg-warning text-dark">${total}</span></div><div class="kds-cliente mb-1"><i class="fa-solid fa-user"></i> ${cliente}<small class="text-muted ms-2"><i class="fa-regular fa-clock"></i> ${hora}</small></div>${productosLista}<div class="d-grid mt-2"><button class="btn btn-danger btn-sm" onclick="confirmarCancelacion('${ordenId}', '${cliente.replace(/'/g, "\\'")}')"><i class="fa-solid fa-ban"></i> CANCELAR ESTE PEDIDO</button></div></div></div>`;
-                    });
-                }
-                document.getElementById('modal-cancelar-body').innerHTML = html;
-                new bootstrap.Modal(document.getElementById('modalCancelarPedidos')).show();
-            } catch (e) { console.error(e); document.getElementById('modal-cancelar-body').innerHTML = '<div class="text-center text-danger py-4">Error cargando pedidos</div>'; }
+            }
+            
+            // ✅ Actualizar timestamp
+            const horaActual = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const elUltimaAct = document.getElementById('ultima-act-cancelar');
+            if (elUltimaAct) {
+                elUltimaAct.textContent = horaActual;
+            }
+            
+            // ✅ FILTRO ESTRICTO: Excluir cancelados, archivados y realizados
+            let pedidosActivos = ventas.filter(v => {
+                let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
+                // Excluir explícitamente estos estados
+                return estado !== "cancelado" && 
+                       estado !== "archivado" && 
+                       estado !== "realizado" &&
+                       estado !== "cancel" &&
+                       estado !== "archive" &&
+                       estado !== "complete";
+            }).slice(-20).reverse();
+            
+            // Aplicar filtro de búsqueda si hay criterio
+            if (criterio) {
+                pedidosActivos = pedidosActivos.filter(v => {
+                    let idOrden = String(v.ID_Orden || v.idOrden || "").toLowerCase();
+                    let cliente = String(v.Cliente || v.Client || v.cliente || "").toLowerCase();
+                    return idOrden.includes(criterio) || cliente.includes(criterio);
+                });
+            }
+            
+            let html = "";
+            if (pedidosActivos.length === 0) {
+                html = '<div class="text-center text-muted py-4"><i class="fa-solid fa-inbox fa-3x mb-3"></i><p>No hay pedidos activos para cancelar</p></div>';
+            } else {
+                html = `<p class="text-muted mb-3">Selecciona el pedido que deseas cancelar:</p>`;
+                pedidosActivos.forEach(v => {
+                    let ordenIdRaw = String(v.ID_Orden || v.idOrden || '');
+                    let ordenId = ordenIdRaw.replace(/[^0-9]/g, "");
+                    if (ordenId.length > 6) ordenId = ordenId.slice(-4);
+                    if (!ordenId) ordenId = "???";
+                    let cliente = v.Cliente || v.Client || v.cliente || "Sin cliente";
+                    let productosRaw = v.Productos || v.productos || "Sin productos";
+                    let total = v.Total || v.TOTAL || "0";
+                    let hora = v.Hora || v.hora || "";
+                    let productosLista = "";
+                    if (productosRaw && productosRaw !== "Sin productos") {
+                        let items = productosRaw.split(",").map(p => p.trim()).filter(p => p);
+                        productosLista = '<div class="kds-productos-lista">';
+                        items.forEach(item => {
+                            let match = item.match(/^(\d+)\s*x\s*(.+)$/i);
+                            if (match) productosLista += `<div class="kds-producto-item"><span class="kds-producto-cantidad">${match[1]}x</span><span>${match[2].trim()}</span></div>`;
+                            else productosLista += `<div class="kds-producto-item">${item}</div>`;
+                        });
+                        productosLista += '</div>';
+                    }
+                    html += `<div class="card cancelar-card shadow-sm"><div class="card-body py-2"><div class="d-flex justify-content-between align-items-center mb-2"><h6 class="orden-numero mb-0">Orden #${ordenId}</h6><span class="badge bg-warning text-dark">${total}</span></div><div class="kds-cliente mb-1"><i class="fa-solid fa-user"></i> ${cliente}<small class="text-muted ms-2"><i class="fa-regular fa-clock"></i> ${hora}</small></div>${productosLista}<div class="d-grid mt-2"><button class="btn btn-danger btn-sm" onclick="confirmarCancelacion('${ordenId}', '${cliente.replace(/'/g, "\\'")}')"><i class="fa-solid fa-ban"></i> CANCELAR ESTE PEDIDO</button></div></div></div>`;
+                });
+            }
+            document.getElementById('lista-pedidos-cancelar').innerHTML = html;
+            new bootstrap.Modal(document.getElementById('modalCancelarPedidos')).show();
         }
 
         function confirmarCancelacion(ordenId, cliente) {
@@ -984,7 +1065,6 @@
             }
         }
 
-        // ✅ FUNCIÓN DE CANCELACIÓN ROBUSTA QUE NUNCA SE TRABA
         async function cancelarDesdeCaja(ordenId) {
             try {
                 let idLimpio = String(ordenId || "").replace(/[^0-9]/g, "");
@@ -1013,12 +1093,9 @@
                     return; 
                 }
 
-                // ✅ CERRAR MODAL PRIMERO (antes de cualquier otra cosa)
                 try {
                     const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos"));
-                    if (modal) {
-                        modal.hide();
-                    }
+                    if (modal) modal.hide();
                 } catch (e) {
                     console.error("Error cerrando modal:", e);
                 }
@@ -1027,7 +1104,10 @@
 
                 document.getElementById("criterio-cancelar").value = "";
                 
-                // ✅ ACTUALIZAR DATOS CON MANEJO DE ERRORES INDIVIDUAL (si uno falla, los otros siguen)
+                // ✅ Invalidar caché después de cancelar
+                ventasCache = [];
+                ultimaActualizacionCache = null;
+                
                 try { await actualizarVentasTurno(); } catch (e) { console.error("Error actualizando ventas:", e); }
                 try { await cargarProductosCaja(); } catch (e) { console.error("Error cargando productos:", e); }
                 try { await cargarPedidosCocina(); } catch (e) { console.error("Error cargando cocina:", e); }
@@ -1037,15 +1117,10 @@
                 console.error("❌ ERROR REAL AL CANCELAR:", error);
                 alert("❌ NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nDetalle: " + error.message);
                 
-                // ✅ ASEGURAR QUE EL MODAL SE CIERRE INCLUSO SI HAY ERROR
                 try {
                     const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos"));
-                    if (modal) {
-                        modal.hide();
-                    }
-                } catch (e) {
-                    // Ignorar error al cerrar modal
-                }
+                    if (modal) modal.hide();
+                } catch (e) {}
             }
         }
     </script>
