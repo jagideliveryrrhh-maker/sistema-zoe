@@ -64,14 +64,8 @@
                     </div>
                     <div id="error-login" class="alert alert-danger d-none py-2"></div>
                     <div id="cargando-usuarios" class="alert alert-info py-2 mb-3"><i class="fa-solid fa-spinner fa-spin"></i> Cargando sistema...</div>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Usuario / Email</label>
-                        <input type="text" id="usuario" class="form-control form-control-lg" placeholder="Tu correo o usuario" autocomplete="off">
-                    </div>
-                    <div class="mb-4">
-                        <label class="form-label fw-semibold">Contraseña</label>
-                        <input type="password" id="contrasena" class="form-control form-control-lg" placeholder="••••••••" onkeydown="if(event.key==='Enter')iniciarSesion()">
-                    </div>
+                    <div class="mb-3"><label class="form-label fw-semibold">Usuario / Email</label><input type="text" id="usuario" class="form-control form-control-lg" placeholder="Tu correo o usuario" autocomplete="off"></div>
+                    <div class="mb-4"><label class="form-label fw-semibold">Contraseña</label><input type="password" id="contrasena" class="form-control form-control-lg" placeholder="••••••••" onkeydown="if(event.key==='Enter')iniciarSesion()"></div>
                     <button onclick="iniciarSesion()" id="btn-ingresar" class="btn btn-danger w-100 btn-lg fw-bold" disabled><i class="fa-solid fa-right-to-bracket me-2"></i> Ingresar</button>
                 </div>
             </div>
@@ -230,7 +224,6 @@
         <div class="ticket-centro" style="font-size: 10px;">¡Gracias por su compra!</div>
     </div>
 
-    <!-- Modales -->
     <div class="modal fade" id="modalCena" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -422,7 +415,7 @@
             renderizarCarrito();
         }
 
-        // ✅ CORRECCIÓN 1: GET REQUEST + LIMPIEZA SOLO TRAS ÉXITO
+        // ✅ FUNCIÓN CRÍTICA: POST con text/plain para evitar CORS
         async function cobrarEImprimir() {
             if (carrito.length === 0) {
                 alert("El carrito está vacío.");
@@ -431,29 +424,31 @@
 
             let cliente = document.getElementById("cliente-nombre").value.trim() || "Mostrador";
             let total = carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0);
-            let ordenId = Math.floor(100000 + Math.random() * 900000); // ID de 6 dígitos
+            let ordenId = Math.floor(100000 + Math.random() * 900000);
             let ahora = new Date();
 
             let productosStr = carrito.map(function(i) {
                 return i.cantidad + "x " + i.nombre;
             }).join(", ");
 
-            let url = API_URL +
-                "?action=registrarVenta" +
-                "&idOrden=" + encodeURIComponent(ordenId) +
-                "&fecha=" + encodeURIComponent(ahora.toLocaleDateString()) +
-                "&cliente=" + encodeURIComponent(cliente) +
-                "&hora=" + encodeURIComponent(ahora.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })) +
-                "&productos=" + encodeURIComponent(productosStr) +
-                "&total=" + encodeURIComponent(total + " Gs.") +
-                "&estado=Pendiente";
-
             try {
                 console.log("📤 Registrando venta:", ordenId);
 
-                const res = await fetch(url, {
-                    method: "GET",
-                    cache: "no-store"
+                const res = await fetch(API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "text/plain;charset=utf-8"
+                    },
+                    body: JSON.stringify({
+                        action: "registrarVenta",
+                        idOrden: ordenId,
+                        fecha: ahora.toLocaleDateString(),
+                        cliente: cliente,
+                        hora: ahora.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                        productos: productosStr,
+                        total: total + " Gs.",
+                        estado: "Pendiente"
+                    })
                 });
 
                 const texto = await res.text();
@@ -463,7 +458,7 @@
                 try {
                     resultado = JSON.parse(texto);
                 } catch (e) {
-                    alert("❌ Apps Script respondió algo inesperado.\n\n" + texto.substring(0, 300));
+                    alert(" Apps Script respondió algo inesperado.\n\n" + texto.substring(0, 300));
                     return;
                 }
 
@@ -474,9 +469,7 @@
 
                 console.log("✅ Venta guardada correctamente:", ordenId);
 
-                // ==========================================
-                // PREPARAR E IMPRIMIR TICKET
-                // ==========================================
+                // Preparar e imprimir ticket
                 document.getElementById('t-orden').textContent = ordenId;
                 document.getElementById('t-fecha').textContent = ahora.toLocaleDateString();
                 document.getElementById('t-hora').textContent = ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
@@ -488,9 +481,7 @@
                 
                 window.print();
 
-                // ==========================================
-                // SOLO AHORA SE LIMPIA EL CARRITO
-                // ==========================================
+                // SOLO AHORA se limpia el carrito
                 carrito = [];
                 document.getElementById("cliente-nombre").value = "";
                 renderizarCarrito();
@@ -702,7 +693,7 @@
             let nombre = document.getElementById('img-prod-nombre').value;
             let url = document.getElementById('img-prod-url').value.trim();
             let imagenAGuardar = imagenBase64 || url;
-            if (!imagenAGuardar) { alert("⚠️ Debes seleccionar una imagen desde tu computadora o pegar una URL válida."); return; }
+            if (!imagenAGuardar) { alert("️ Debes seleccionar una imagen desde tu computadora o pegar una URL válida."); return; }
             if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("️ La imagen sigue siendo muy grande (" + Math.round(imagenAGuardar.length/1024) + " KB).\n\nPor favor:\n1. Usa una imagen más pequeña\n2. O súbela a imgur.com y pega el link"); return; }
             try {
                 const res = await fetch(API_URL, {
@@ -908,7 +899,7 @@
             }
         }
 
-        // ✅ CORRECCIÓN 2: GET REQUEST + MANEJO ROBUSTO DE ERRORES
+        // ✅ FUNCIÓN CRÍTICA: POST con text/plain para evitar CORS
         async function cancelarDesdeCaja(ordenId) {
             try {
                 let idLimpio = String(ordenId || "").replace(/[^0-9]/g, "");
@@ -919,11 +910,15 @@
                 idLimpio = idLimpio.slice(-4);
                 console.log("🔄 Cancelando pedido:", idLimpio);
 
-                const url = API_URL + "?action=cancelarPedido" + "&criterio=" + encodeURIComponent(idLimpio);
-
-                const res = await fetch(url, {
-                    method: "GET",
-                    cache: "no-store"
+                const res = await fetch(API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "text/plain;charset=utf-8"
+                    },
+                    body: JSON.stringify({
+                        action: "cancelarPedido",
+                        criterio: idLimpio
+                    })
                 });
 
                 const texto = await res.text();
