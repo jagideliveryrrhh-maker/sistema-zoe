@@ -434,7 +434,6 @@
             renderizarCarrito();
         }
 
-        // ✅ IMPRESIÓN OPTIMIZADA: No bloquea la interfaz y limpia el carrito al instante
         async function cobrarEImprimir() {
             if (carrito.length === 0) { alert("El carrito está vacío."); return; }
 
@@ -985,6 +984,7 @@
             }
         }
 
+        // ✅ FUNCIÓN DE CANCELACIÓN ROBUSTA QUE NUNCA SE TRABA
         async function cancelarDesdeCaja(ordenId) {
             try {
                 let idLimpio = String(ordenId || "").replace(/[^0-9]/g, "");
@@ -1000,24 +1000,52 @@
 
                 const texto = await res.text();
                 let resultado;
-                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Respuesta inválida.\n\n" + texto.substring(0, 300)); return; }
+                try { 
+                    resultado = JSON.parse(texto); 
+                } catch (e) { 
+                    console.error("❌ Error parseando respuesta:", texto);
+                    alert("❌ Respuesta inválida del servidor.\n\n" + texto.substring(0, 200)); 
+                    return; 
+                }
 
-                if (resultado.status !== "success") { alert("❌ NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido.")); return; }
+                if (resultado.status !== "success") { 
+                    alert("❌ NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido.")); 
+                    return; 
+                }
 
-                const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos"));
-                if (modal) modal.hide();
+                // ✅ CERRAR MODAL PRIMERO (antes de cualquier otra cosa)
+                try {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos"));
+                    if (modal) {
+                        modal.hide();
+                    }
+                } catch (e) {
+                    console.error("Error cerrando modal:", e);
+                }
 
                 alert("✅ PEDIDO CANCELADO\n\nOrden #" + idLimpio + "\n\nEl total fue puesto en 0 Gs.\nEl stock fue reintegrado.");
 
                 document.getElementById("criterio-cancelar").value = "";
-                await actualizarVentasTurno();
-                await cargarProductosCaja();
-                await cargarPedidosCocina();
-                if (typeof cargarStock === "function") await cargarStock();
+                
+                // ✅ ACTUALIZAR DATOS CON MANEJO DE ERRORES INDIVIDUAL (si uno falla, los otros siguen)
+                try { await actualizarVentasTurno(); } catch (e) { console.error("Error actualizando ventas:", e); }
+                try { await cargarProductosCaja(); } catch (e) { console.error("Error cargando productos:", e); }
+                try { await cargarPedidosCocina(); } catch (e) { console.error("Error cargando cocina:", e); }
+                try { if (typeof cargarStock === "function") await cargarStock(); } catch (e) { console.error("Error cargando stock:", e); }
 
             } catch (error) {
                 console.error("❌ ERROR REAL AL CANCELAR:", error);
                 alert("❌ NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nDetalle: " + error.message);
+                
+                // ✅ ASEGURAR QUE EL MODAL SE CIERRE INCLUSO SI HAY ERROR
+                try {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos"));
+                    if (modal) {
+                        modal.hide();
+                    }
+                } catch (e) {
+                    // Ignorar error al cerrar modal
+                }
             }
         }
     </script>
