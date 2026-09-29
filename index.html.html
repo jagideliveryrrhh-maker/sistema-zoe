@@ -463,7 +463,7 @@
                 }
 
                 if (resultado.status !== "success") {
-                    alert("❌ LA VENTA NO SE GUARDÓ\n\n" + (resultado.mensaje || "Error desconocido.")); return;
+                    alert(" LA VENTA NO SE GUARDÓ\n\n" + (resultado.mensaje || "Error desconocido.")); return;
                 }
 
                 // ✅ CREAR VENTANA NUEVA SOLO CON EL TICKET
@@ -518,7 +518,8 @@
                     await cargarPedidosCocina(); // ✅ Actualiza cocina inmediatamente
                 }
 
-                alert("✅ VENTA REGISTRADA\n\nOrden #" + ordenId + "\nTotal: " + total.toLocaleString() + " Gs.");
+                // ✅ MENSAJE ELIMINADO - Ya no aparece el alert
+                // alert("✅ VENTA REGISTRADA\n\nOrden #" + ordenId + "\nTotal: " + total.toLocaleString() + " Gs.");
 
             } catch (error) {
                 console.error("❌ ERROR REGISTRANDO VENTA:", error);
@@ -667,7 +668,7 @@
         async function archivarPedido(ordenId) {
             if (!confirm(`¿Archivar pedido #${ordenId}?\n\nDesaparecerá de la vista de cocina.`)) return;
             try {
-                console.log("🗑️ Archivando pedido:", ordenId);
+                console.log("️ Archivando pedido:", ordenId);
                 const res = await fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -735,7 +736,7 @@
         function previsualizarImagenLocal(event) {
             let file = event.target.files[0];
             if (!file) return;
-            if (!file.type.startsWith('image/')) { alert("⚠️ El archivo debe ser una imagen (JPG, PNG)"); return; }
+            if (!file.type.startsWith('image/')) { alert("️ El archivo debe ser una imagen (JPG, PNG)"); return; }
             let reader = new FileReader();
             reader.onload = function(e) {
                 let img = new Image();
@@ -769,7 +770,7 @@
             let tamanoInfo = document.getElementById('img-tamano-info');
             if (url) {
                 preview.src = url; preview.style.display = "block"; placeholder.style.display = "none"; tamanoInfo.classList.add('d-none');
-                preview.onerror = function() { this.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = "❌ No se pudo cargar la imagen. Verifica la URL."; };
+                preview.onerror = function() { this.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = " No se pudo cargar la imagen. Verifica la URL."; };
                 imagenBase64 = "";
             } else { preview.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = "La imagen aparecerá aquí"; }
         }
