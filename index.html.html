@@ -268,8 +268,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // ✅ TU URL DE APPS SCRIPT ACTUALIZADA
-        const API_URL = "https://script.google.com/macros/s/AKfycbzMnAiTrtGtAloeEr45kXMoNEiZPM4JDi-6V46EpL9kAUBMNo0PIjp3dGNGv1FecPTW_Q/exec";
+        // ✅ TU NUEVA URL DE APPS SCRIPT
+        const API_URL = "https://script.google.com/macros/s/AKfycbzd0p4S7v_cl-i8p_m_Hdnbthr-vw0kMasUdBtPU_OA1gz6FmuNGYRGp7uVxfJqYxld/exec";
         const SESION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
         const INTERVALO_COCINA_MS = 5000;
         let usuarios = [], sesion = null, listaProductos = [], carrito = [], filtroActivo = 'ninguno', imagenBase64 = "";
@@ -435,7 +435,7 @@
             renderizarCarrito();
         }
 
-        // ✅ FUNCIÓN CRÍTICA: IMPRESIÓN EN VENTANA NUEVA + ACTUALIZACIÓN DE COCINA
+        // ✅ IMPRESIÓN EN VENTANA NUEVA + ACTUALIZACIÓN DE COCINA
         async function cobrarEImprimir() {
             if (carrito.length === 0) { alert("El carrito está vacío."); return; }
 
@@ -654,29 +654,39 @@
                     body: JSON.stringify({ action: "actualizarEstadoPedido", idOrden: ordenId, estado: "Realizado" })
                 });
                 const texto = await res.text();
-                const resultado = JSON.parse(texto);
+                let resultado;
+                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error en la respuesta del servidor"); return; }
+                
                 if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo actualizar")); return; }
                 await cargarPedidosCocina();
                 alert("✅ Pedido marcado como REALIZADO");
             } catch (e) { console.error(e); alert("❌ Error al actualizar.\n\n" + e.message); }
         }
 
+        // ✅ ARCHIVAR CON FORZADO DE RECARGA PARA QUE DESAPAREZCA
         async function archivarPedido(ordenId) {
             if (!confirm(`¿Archivar pedido #${ordenId}?\n\nDesaparecerá de la vista de cocina.`)) return;
             try {
+                console.log("🗑️ Archivando pedido:", ordenId);
                 const res = await fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
                     body: JSON.stringify({ action: "actualizarEstadoPedido", idOrden: ordenId, estado: "Archivado" })
                 });
                 const texto = await res.text();
-                const resultado = JSON.parse(texto);
+                let resultado;
+                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error en la respuesta del servidor"); return; }
+                
                 if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo archivar")); return; }
                 
-                // ✅ FORZAR RECARGA PARA QUE DESAPAREZCA
+                // ✅ FORZAR RECARGA COMPLETA PARA QUE DESAPAREZCA
+                console.log("✅ Pedido archivado, recargando vista...");
                 await cargarPedidosCocina();
                 alert("✅ Pedido archivado correctamente");
-            } catch (e) { console.error(e); alert("❌ Error al archivar.\n\n" + e.message); }
+            } catch (e) { 
+                console.error("❌ Error al archivar:", e); 
+                alert("❌ Error de conexión al archivar.\n\n" + e.message); 
+            }
         }
 
         async function cargarStock() {
