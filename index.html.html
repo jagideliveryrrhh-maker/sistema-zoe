@@ -230,7 +230,7 @@
         <div class="ticket-centro" style="font-size: 10px;">¡Gracias por su compra!</div>
     </div>
 
-    <!-- Modales (Cena, Cancelar, Imagen, Receta) -->
+    <!-- Modales -->
     <div class="modal fade" id="modalCena" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -422,29 +422,88 @@
             renderizarCarrito();
         }
 
+        // ✅ CORRECCIÓN 1: GET REQUEST + LIMPIEZA SOLO TRAS ÉXITO
         async function cobrarEImprimir() {
-            if (carrito.length === 0) return alert("El carrito está vacío.");
-            let cliente = document.getElementById('cliente-nombre').value.trim() || "Mostrador";
+            if (carrito.length === 0) {
+                alert("El carrito está vacío.");
+                return;
+            }
+
+            let cliente = document.getElementById("cliente-nombre").value.trim() || "Mostrador";
             let total = carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0);
-            let ordenId = Math.floor(1000 + Math.random() * 9000);
+            let ordenId = Math.floor(100000 + Math.random() * 900000); // ID de 6 dígitos
             let ahora = new Date();
-            let productosStr = carrito.map(i => `${i.cantidad}x ${i.nombre}`).join(", ");
-            
-            document.getElementById('t-orden').textContent = ordenId;
-            document.getElementById('t-fecha').textContent = ahora.toLocaleDateString();
-            document.getElementById('t-hora').textContent = ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            document.getElementById('t-cliente').textContent = cliente;
-            document.getElementById('t-items').innerHTML = carrito.map(i => `<div class="ticket-item"><span>${i.cantidad} x ${i.nombre}</span><span>${(i.precio * i.cantidad).toLocaleString()}</span></div>`).join('');
-            document.getElementById('t-total').textContent = total.toLocaleString() + " Gs.";
-            
-            window.print();
-            carrito = []; document.getElementById('cliente-nombre').value = ""; renderizarCarrito();
-            
-            fetch(API_URL, {
-                method: "POST",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({ action: "registrarVenta", fecha: ahora.toLocaleDateString(), idOrden: ordenId, cliente: cliente, hora: ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}), productos: productosStr, total: total + " Gs.", estado: "Pendiente" })
-            }).then(() => { console.log("✅ Venta registrada"); actualizarVentasTurno(); }).catch(e => { console.error("❌ Error:", e); alert("⚠️ La venta se imprimió pero NO se guardó en la nube."); });
+
+            let productosStr = carrito.map(function(i) {
+                return i.cantidad + "x " + i.nombre;
+            }).join(", ");
+
+            let url = API_URL +
+                "?action=registrarVenta" +
+                "&idOrden=" + encodeURIComponent(ordenId) +
+                "&fecha=" + encodeURIComponent(ahora.toLocaleDateString()) +
+                "&cliente=" + encodeURIComponent(cliente) +
+                "&hora=" + encodeURIComponent(ahora.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })) +
+                "&productos=" + encodeURIComponent(productosStr) +
+                "&total=" + encodeURIComponent(total + " Gs.") +
+                "&estado=Pendiente";
+
+            try {
+                console.log("📤 Registrando venta:", ordenId);
+
+                const res = await fetch(url, {
+                    method: "GET",
+                    cache: "no-store"
+                });
+
+                const texto = await res.text();
+                console.log("📥 Respuesta Apps Script:", texto);
+
+                let resultado;
+                try {
+                    resultado = JSON.parse(texto);
+                } catch (e) {
+                    alert("❌ Apps Script respondió algo inesperado.\n\n" + texto.substring(0, 300));
+                    return;
+                }
+
+                if (resultado.status !== "success") {
+                    alert("❌ LA VENTA NO SE GUARDÓ\n\n" + (resultado.mensaje || "Error desconocido."));
+                    return;
+                }
+
+                console.log("✅ Venta guardada correctamente:", ordenId);
+
+                // ==========================================
+                // PREPARAR E IMPRIMIR TICKET
+                // ==========================================
+                document.getElementById('t-orden').textContent = ordenId;
+                document.getElementById('t-fecha').textContent = ahora.toLocaleDateString();
+                document.getElementById('t-hora').textContent = ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                document.getElementById('t-cliente').textContent = cliente;
+                document.getElementById('t-items').innerHTML = carrito.map(i => 
+                    `<div class="ticket-item"><span>${i.cantidad} x ${i.nombre}</span><span>${(i.precio * i.cantidad).toLocaleString()}</span></div>`
+                ).join('');
+                document.getElementById('t-total').textContent = total.toLocaleString() + " Gs.";
+                
+                window.print();
+
+                // ==========================================
+                // SOLO AHORA SE LIMPIA EL CARRITO
+                // ==========================================
+                carrito = [];
+                document.getElementById("cliente-nombre").value = "";
+                renderizarCarrito();
+
+                await actualizarVentasTurno();
+                await cargarProductosCaja();
+
+                alert("✅ VENTA REGISTRADA\n\nOrden #" + ordenId + "\nTotal: " + total.toLocaleString() + " Gs.");
+
+            } catch (error) {
+                console.error("❌ ERROR REGISTRANDO VENTA:", error);
+                alert("❌ NO SE PUDO GUARDAR LA VENTA\n\nLa venta NO fue registrada en Google Sheets.\n\nDetalle: " + error.message);
+            }
         }
 
         async function actualizarVentasTurno() {
@@ -849,47 +908,62 @@
             }
         }
 
+        // ✅ CORRECCIÓN 2: GET REQUEST + MANEJO ROBUSTO DE ERRORES
         async function cancelarDesdeCaja(ordenId) {
             try {
                 let idLimpio = String(ordenId || "").replace(/[^0-9]/g, "");
-                if (!idLimpio) { alert("❌ ID de pedido inválido."); return; }
+                if (!idLimpio) {
+                    alert("❌ ID de pedido inválido.");
+                    return;
+                }
                 idLimpio = idLimpio.slice(-4);
-                console.log("🔄 Cancelando pedido ID:", idLimpio);
+                console.log("🔄 Cancelando pedido:", idLimpio);
 
-                const res = await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain;charset=utf-8" },
-                    body: JSON.stringify({ action: "cancelarPedido", criterio: idLimpio })
+                const url = API_URL + "?action=cancelarPedido" + "&criterio=" + encodeURIComponent(idLimpio);
+
+                const res = await fetch(url, {
+                    method: "GET",
+                    cache: "no-store"
                 });
 
                 const texto = await res.text();
-                console.log("📥 Respuesta cruda:", texto);
+                console.log("📥 Respuesta cancelación:", texto);
 
                 let resultado;
                 try {
                     resultado = JSON.parse(texto);
-                } catch (error) {
-                    console.error("❌ Respuesta no válida:", texto);
-                    alert("❌ El servidor respondió algo inesperado.\n\n" + texto.substring(0, 300));
+                } catch (e) {
+                    alert("❌ Respuesta inválida de Google Sheets.\n\n" + texto.substring(0, 300));
                     return;
                 }
 
-                console.log("📥 Respuesta del servidor:", resultado);
-
-                if (resultado.status === "success") {
-                    const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos"));
-                    if (modal) modal.hide();
-                    alert("✅ PEDIDO CANCELADO\n\nOrden #" + idLimpio + "\nTotal puesto en 0 Gs.\nIngredientes reintegrados al stock.");
-                    document.getElementById("criterio-cancelar").value = "";
-                    await actualizarVentasTurno();
-                    await cargarStock();
-                    await cargarPedidosCocina();
-                } else {
-                    alert("❌ No se pudo cancelar el pedido.\n\n" + (resultado.mensaje || "Error desconocido del servidor."));
+                if (resultado.status !== "success") {
+                    alert("❌ NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido."));
+                    return;
                 }
-            } catch (e) {
-                console.error("❌ ERROR REAL AL CANCELAR:", e);
-                alert("❌ No se pudo conectar con el servidor.\n\nRevisá la conexión y la URL del Apps Script.\n\nDetalle: " + e.message);
+
+                const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos"));
+                if (modal) {
+                    modal.hide();
+                }
+
+                alert("✅ PEDIDO CANCELADO\n\nOrden #" + idLimpio + "\n\nEl total fue puesto en 0 Gs.\nEl stock fue reintegrado.");
+
+                document.getElementById("criterio-cancelar").value = "";
+
+                await actualizarVentasTurno();
+                await cargarProductosCaja();
+
+                if (typeof cargarStock === "function") {
+                    await cargarStock();
+                }
+                if (typeof cargarPedidosCocina === "function") {
+                    await cargarPedidosCocina();
+                }
+
+            } catch (error) {
+                console.error("❌ ERROR REAL AL CANCELAR:", error);
+                alert("❌ NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nEl pedido NO fue cancelado.\n\nDetalle: " + error.message);
             }
         }
     </script>
