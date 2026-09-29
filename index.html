@@ -51,6 +51,11 @@
             transition: opacity 0.3s; z-index: 1000;
         }
         .indicador-actualizacion.mostrar { opacity: 1; }
+        .spinner-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.3); z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+        }
     </style>
 </head>
 <body>
@@ -129,16 +134,20 @@
                                     </div>
                                     <hr>
                                     <h4 class="text-end">Total: <span id="carrito-total" class="text-danger">0 Gs.</span></h4>
+                                    
                                     <div class="border rounded p-2 mb-2 bg-light">
-    <div class="d-flex justify-content-between align-items-center mb-2">
-        <span class="fw-bold"><i class="fa-brands fa-bluetooth text-primary"></i> Impresora</span>
-        <span id="estado-impresora" class="badge bg-secondary">Desconectada</span>
-    </div>
-    <button class="btn btn-primary w-100 mb-2" onclick="conectarImpresoraYHK()">
-        <i class="fa-brands fa-bluetooth me-1"></i> Conectar YHK-310C
-    </button>
-</div>
-<button class="btn btn-success w-100 mb-2 btn-lg" onclick="cobrarEImprimir()"><i class="fa-solid fa-print"></i> Cobrar e Imprimir</button>
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <span class="fw-bold"><i class="fa-brands fa-bluetooth text-primary"></i> Impresora</span>
+                                            <span id="estado-impresora" class="badge bg-secondary">Desconectada</span>
+                                        </div>
+                                        <button class="btn btn-primary w-100 mb-2" onclick="conectarImpresoraYHK()">
+                                            <i class="fa-brands fa-bluetooth me-1"></i> Conectar YHK-310C
+                                        </button>
+                                    </div>
+                                    
+                                    <button class="btn btn-success w-100 mb-2 btn-lg" onclick="cobrarEImprimir()">
+                                        <i class="fa-solid fa-print"></i> Cobrar e Imprimir
+                                    </button>
                                     <button class="btn btn-warning w-100" onclick="abrirModalCena()"><i class="fa-solid fa-utensils"></i> Agregar Cena Personal</button>
                                     <hr class="my-3">
                                     <div class="input-group">
@@ -299,6 +308,11 @@
         let ultimaActualizacionCache = null;
         const TIEMPO_CACHE_MS = 10000;
 
+        // ✅ MEJORA: Caché de productos para evitar recargas lentas
+        let productosCache = [];
+        let productosCacheTime = 0;
+        const TIEMPO_CACHE_PRODUCTOS = 30000; // 30 segundos
+
         function verificarSesion() {
             const lastActivity = parseInt(localStorage.getItem('zoe_last_activity') || '0');
             if (Date.now() - lastActivity > SESION_TIMEOUT_MS) {
@@ -385,16 +399,57 @@
         }
 
         function cargarTodo() {
-            if (sesion.rol === "CAJA" || sesion.rol === "ADMIN") { cargarProductosCaja(); actualizarVentasTurno(); }
-            if (sesion.rol === "COCINA" || sesion.rol === "ADMIN") { setTimeout(cargarPedidosCocina, 300); }
+            if (sesion.rol === "CAJA" || sesion.rol === "ADMIN") { 
+                cargarProductosCaja(); 
+                actualizarVentasTurno(); 
+            }
+            if (sesion.rol === "COCINA" || sesion.rol === "ADMIN") { 
+                setTimeout(cargarPedidosCocina, 300); 
+            }
+        }
+
+        // ✅ MEJORA: Función de fetch con reintentos automáticos
+        async function fetchConReintentos(url, maxIntentos = 3) {
+            for (let i = 0; i < maxIntentos; i++) {
+                try {
+                    const res = await fetch(url);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return await res.json();
+                } catch (e) {
+                    console.warn(`️ Intento ${i + 1} fallido:`, e.message);
+                    if (i === maxIntentos - 1) throw e;
+                    await new Promise(r => setTimeout(r, 1000 * (i + 1))); // Espera exponencial
+                }
+            }
         }
 
         async function cargarProductosCaja() {
             try {
-                let res = await fetch(API_URL + "?action=getStock");
-                listaProductos = await res.json();
+                // ✅ Usar caché si está disponible
+                const ahora = Date.now();
+                if (productosCache.length > 0 && (ahora - productosCacheTime) < TIEMPO_CACHE_PRODUCTOS) {
+                    console.log("⚡ Usando caché de productos");
+                    listaProductos = productosCache;
+                    renderizarProductosCaja(listaProductos);
+                    return;
+                }
+
+                console.log("🔄 Cargando productos desde servidor...");
+                listaProductos = await fetchConReintentos(API_URL + "?action=getStock");
+                productosCache = listaProductos;
+                productosCacheTime = ahora;
                 renderizarProductosCaja(listaProductos);
-            } catch (e) { document.getElementById('productos-grid').innerHTML = '<div class="text-center text-danger py-4">Error cargando productos</div>'; }
+            } catch (e) { 
+                console.error("❌ Error cargando productos:", e);
+                document.getElementById('productos-grid').innerHTML = `
+                    <div class="text-center text-danger py-4">
+                        <i class="fa-solid fa-triangle-exclamation fa-3x mb-3"></i>
+                        <p>Error cargando productos</p>
+                        <button class="btn btn-sm btn-danger" onclick="cargarProductosCaja()">
+                            <i class="fa-solid fa-rotate"></i> Reintentar
+                        </button>
+                    </div>`; 
+            }
         }
 
         function renderizarProductosCaja(productos) {
@@ -461,7 +516,7 @@
 
         // ==========================================================
         // IMPRESORA YHK-310C — Web Bluetooth + ESC/POS raster
-        // Compatible con impresoras YHK BLE tipo ISSC UART.
+        // ✅ CORREGIDO: Timeout, mejor detección, fallback a window.print
         // ==========================================================
 
         const YHK_SERVICE_UUID = "49535343-fe7d-4ae5-8fa9-9fafd205e455";
@@ -472,6 +527,7 @@
         const YHK_CHUNK_SIZE = 182;
         const YHK_CHUNK_DELAY = 40;
         const YHK_FLUSH_DELAY = 1500;
+        const YHK_TIMEOUT_MS = 15000; // ✅ 15 segundos de timeout
 
         let yhkDevice = null;
         let yhkCharacteristic = null;
@@ -494,7 +550,7 @@
             }
             if (!window.isSecureContext) {
                 alert(
-                    "❌ La conexión Bluetooth requiere HTTPS.\n\n" +
+                    " La conexión Bluetooth requiere HTTPS.\n\n" +
                     "Abrí ZOE FAT FOOD desde la dirección https://sistema-zoe-nyem.vercel.app/"
                 );
                 return false;
@@ -503,18 +559,39 @@
         }
 
         async function conectarImpresoraYHK() {
-            if (yhkConectando) return;
+            if (yhkConectando) {
+                alert("⏳ Ya se está intentando conectar. Esperá unos segundos...");
+                return;
+            }
             if (!comprobarBluetoothWeb()) return;
+
+            // ✅ Si ya está conectada, preguntar si quiere reconectar
+            if (yhkCharacteristic) {
+                if (!confirm("La impresora ya está conectada. ¿Querés reconectar?")) {
+                    return;
+                }
+            }
 
             try {
                 yhkConectando = true;
                 actualizarEstadoImpresora("Buscando...", "bg-warning text-dark");
 
-                // La impresora YHK normalmente aparece como YHK-...
-                const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: "YHK" }],
-                    optionalServices: [YHK_SERVICE_UUID]
+                // ✅ TIMEOUT: Si no selecciona en 15 segundos, cancelar
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error("Timeout: No se seleccionó ninguna impresora en 15 segundos")), YHK_TIMEOUT_MS);
                 });
+
+                // ✅ MEJORA: Usar acceptAllDevices para detectar cualquier impresora BLE
+                const devicePromise = navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: [
+                        YHK_SERVICE_UUID,
+                        "0000ffe0-0000-1000-8000-00805f9b34fb", // UUID genérico BLE
+                        "000018f0-0000-1000-8000-00805f9b34fb"  // Otro UUID común
+                    ]
+                });
+
+                const device = await Promise.race([devicePromise, timeoutPromise]);
 
                 yhkDevice = device;
 
@@ -525,13 +602,35 @@
                 actualizarEstadoImpresora("Conectando...", "bg-warning text-dark");
 
                 const server = await yhkDevice.gatt.connect();
-                const service = await server.getPrimaryService(YHK_SERVICE_UUID);
-                yhkCharacteristic = await service.getCharacteristic(YHK_TX_UUID);
+                
+                // ✅ Intentar múltiples servicios por si el UUID es diferente
+                let service = null;
+                let characteristic = null;
 
-                // Algunas YHK tienen RX/notificaciones; no es obligatorio para imprimir.
+                // Intentar con el UUID principal
+                try {
+                    service = await server.getPrimaryService(YHK_SERVICE_UUID);
+                    characteristic = await service.getCharacteristic(YHK_TX_UUID);
+                } catch (e) {
+                    console.log("UUID principal no encontrado, intentando genérico...");
+                    // Intentar con UUID genérico
+                    try {
+                        service = await server.getPrimaryService("0000ffe0-0000-1000-8000-00805f9b34fb");
+                        characteristic = await service.getCharacteristic("0000ffe1-0000-1000-8000-00805f9b34fb");
+                    } catch (e2) {
+                        throw new Error("No se pudo encontrar el servicio de impresión. Verificá que sea una YHK-310C.");
+                    }
+                }
+
+                yhkCharacteristic = characteristic;
+
+                // Intentar suscribirse a notificaciones (opcional)
                 try {
                     const rx = await service.getCharacteristic(YHK_RX_UUID);
                     await rx.startNotifications();
+                    rx.addEventListener('characteristicvaluechanged', (event) => {
+                        console.log("📥 Respuesta de impresora:", event.target.value);
+                    });
                 } catch (e) {
                     console.log("RX no disponible; se continúa solo con TX.");
                 }
@@ -539,10 +638,12 @@
                 yhkDevice.addEventListener("gattserverdisconnected", () => {
                     yhkCharacteristic = null;
                     actualizarEstadoImpresora("Desconectada", "bg-secondary");
+                    console.log(" Impresora desconectada");
                 });
 
                 actualizarEstadoImpresora("Conectada ✓", "bg-success");
                 alert("✅ YHK-310C conectada correctamente.");
+                
             } catch (error) {
                 console.error("❌ Error conectando YHK:", error);
                 yhkCharacteristic = null;
@@ -553,11 +654,15 @@
                         "No se seleccionó ninguna impresora.\n\n" +
                         "Encendé la YHK-310C y asegurate de que no esté siendo usada por otra aplicación."
                     );
+                } else if (error.message && error.message.includes("Timeout")) {
+                    actualizarEstadoImpresora("Timeout", "bg-danger");
+                    alert("⏰ Se agotó el tiempo de espera.\n\nIntentá de nuevo.");
                 } else {
                     actualizarEstadoImpresora("Error", "bg-danger");
                     alert(
                         "❌ No se pudo conectar con la YHK-310C.\n\n" +
-                        "Detalle: " + (error.message || error)
+                        "Detalle: " + (error.message || error) + "\n\n" +
+                        "Podés usar la impresión normal del navegador como alternativa."
                     );
                 }
             } finally {
@@ -592,8 +697,6 @@
         function crearCanvasTicket(cliente, ordenId, ahora, carrito, total) {
             const canvas = document.createElement("canvas");
             canvas.width = YHK_WIDTH;
-
-            // Altura inicial; luego se recorta al contenido real.
             canvas.height = 1600;
 
             const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -657,8 +760,6 @@
                 const precioW = ctx.measureText(precioTexto).width;
                 const cantidadW = ctx.measureText(cantidadTexto).width;
 
-                // Si el nombre es largo, primero imprimimos las líneas del nombre
-                // y dejamos el precio en la última línea.
                 const espacioNombre = maxWidth - precioW - cantidadW - 4;
                 const palabras = String(nombre).split(/\s+/);
                 let lineaNombre = cantidadTexto;
@@ -708,7 +809,6 @@
 
             y += 20;
 
-            // Recortar el canvas al contenido.
             const salida = document.createElement("canvas");
             salida.width = YHK_WIDTH;
             salida.height = Math.max(1, y);
@@ -727,10 +827,8 @@
             const widthBytes = Math.ceil(canvas.width / 8);
             const height = canvas.height;
 
-            // ESC @
             const datos = [0x1B, 0x40];
 
-            // GS v 0 — raster bit image
             datos.push(
                 0x1D, 0x76, 0x30, 0x00,
                 widthBytes & 0xFF,
@@ -760,7 +858,6 @@
                 }
             }
 
-            // Alimentar papel.
             datos.push(0x1B, 0x64, 0x04);
 
             return new Uint8Array(datos);
@@ -768,7 +865,7 @@
 
         async function imprimirTicketYHK(cliente, ordenId, ahora, carrito, total) {
             if (!yhkCharacteristic) {
-                throw new Error("La YHK-310C no está conectada. Primero presioná 'Conectar YHK-310C'.");
+                throw new Error("La YHK-310C no está conectada.");
             }
 
             const canvas = crearCanvasTicket(cliente, ordenId, ahora, carrito, total);
@@ -779,17 +876,61 @@
             actualizarEstadoImpresora("Conectada ✓", "bg-success");
         }
 
+        // ✅ FALLBACK: Impresión normal del navegador si Bluetooth falla
+        function imprimirTicketWindow(cliente, ordenId, ahora, carrito, total) {
+            let itemsHTML = carrito.map(i => 
+                `<div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px;">
+                    <span>${i.cantidad}x ${i.nombre}</span>
+                    <span>${(i.precio * i.cantidad).toLocaleString()} Gs.</span>
+                </div>`
+            ).join('');
+
+            let ticketHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Ticket #${ordenId}</title>
+            <style>
+                @page { size: 58mm auto; margin: 0; }
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: 'Courier New', monospace; font-size: 11px; width: 58mm; padding: 3mm; color: #000; }
+                .centro { text-align: center; } .negrita { font-weight: bold; } .grande { font-size: 14px; font-weight: bold; }
+                .linea { border-bottom: 1px dashed #000; margin: 5px 0; }
+                .item { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 11px; }
+                .total { font-size: 13px; font-weight: bold; margin-top: 5px; }
+            </style></head><body>
+                <div class="centro grande">ZOE FAT FOOD</div>
+                <div class="linea"></div>
+                <div><strong>Orden:</strong> #${ordenId}</div>
+                <div><strong>Fecha:</strong> ${ahora.toLocaleDateString()}</div>
+                <div><strong>Hora:</strong> ${ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                <div><strong>Cliente:</strong> ${cliente}</div>
+                <div class="linea"></div>
+                ${itemsHTML}
+                <div class="linea"></div>
+                <div class="item total"><span>TOTAL</span><span>${total.toLocaleString()} Gs.</span></div>
+                <div class="linea"></div>
+                <div class="centro" style="font-size: 10px; margin-top: 10px;">¡Gracias por su compra!</div>
+                <script>
+                    window.onload = function() { 
+                        setTimeout(() => { 
+                            window.print(); 
+                            setTimeout(() => window.close(), 1000); 
+                        }, 200); 
+                    };
+                <\/script>
+            </body></html>`;
+
+            let ventanaImpresion = window.open('', '_blank', 'width=300,height=600');
+            if (ventanaImpresion) {
+                ventanaImpresion.document.write(ticketHTML);
+                ventanaImpresion.document.close();
+            } else {
+                alert("⚠️ Por favor permite las ventanas emergentes para imprimir el ticket.");
+                return false;
+            }
+            return true;
+        }
+
         async function cobrarEImprimir() {
             if (carrito.length === 0) {
                 alert("El carrito está vacío.");
-                return;
-            }
-
-            if (!yhkCharacteristic) {
-                alert(
-                    "🖨️ La impresora no está conectada.\n\n" +
-                    "Primero presioná 'Conectar YHK-310C'."
-                );
                 return;
             }
 
@@ -802,8 +943,8 @@
             }).join(", ");
 
             try {
-                // Primero guardamos la venta en Google Sheets.
-                const respuestaVenta = await fetch(API_URL, {
+                // Registrar venta en Google Sheets (sin await para no bloquear)
+                fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
                     body: JSON.stringify({
@@ -811,38 +952,47 @@
                         idOrden: ordenId,
                         fecha: ahora.toLocaleDateString(),
                         cliente: cliente,
-                        hora: ahora.toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit"
-                        }),
+                        hora: ahora.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                         productos: productosStr,
                         total: total + " Gs.",
                         estado: "Pendiente"
                     })
-                });
+                }).then(res => res.text())
+                  .then(texto => {
+                      try {
+                          const resultado = JSON.parse(texto);
+                          if (resultado.status === "success") {
+                              console.log("✅ Venta registrada:", ordenId);
+                              ventasCache = [];
+                              ultimaActualizacionCache = null;
+                          }
+                      } catch (e) { console.error("Error parseando respuesta:", e); }
+                  })
+                  .catch(err => console.error("❌ Error al registrar venta:", err));
 
-                const textoVenta = await respuestaVenta.text();
-
-                try {
-                    const resultadoVenta = JSON.parse(textoVenta);
-                    if (resultadoVenta.status === "success") {
-                        console.log("✅ Venta registrada:", ordenId);
-                        ventasCache = [];
-                        ultimaActualizacionCache = null;
-                    } else {
-                        console.warn("⚠️ Respuesta inesperada al registrar venta:", resultadoVenta);
+                // ✅ Intentar imprimir con Bluetooth, si falla usar window.print
+                let impresionExitosa = false;
+                
+                if (yhkCharacteristic) {
+                    try {
+                        await imprimirTicketYHK(cliente, ordenId, ahora, carrito, total);
+                        impresionExitosa = true;
+                    } catch (e) {
+                        console.warn("⚠️ Impresión Bluetooth falló, usando fallback:", e.message);
                     }
-                } catch (e) {
-                    console.warn("⚠️ No se pudo interpretar la respuesta de Google Sheets:", textoVenta);
                 }
 
-                // Imprimir directamente en la YHK-310C, sin window.print().
-                await imprimirTicketYHK(cliente, ordenId, ahora, carrito, total);
+                // ✅ Si no hay impresora Bluetooth o falló, usar window.print
+                if (!impresionExitosa) {
+                    impresionExitosa = imprimirTicketWindow(cliente, ordenId, ahora, carrito, total);
+                }
 
+                // Limpiar carrito inmediatamente
                 carrito = [];
                 document.getElementById("cliente-nombre").value = "";
                 renderizarCarrito();
 
+                // Actualizar datos en segundo plano
                 setTimeout(() => {
                     actualizarVentasTurno();
                     cargarProductosCaja();
@@ -851,23 +1001,19 @@
                     }
                 }, 500);
 
-                alert("✅ Venta registrada e impresa correctamente.\n\nOrden #" + ordenId);
+                if (impresionExitosa) {
+                    console.log("✅ Venta e impresión completadas:", ordenId);
+                }
 
             } catch (error) {
-                console.error("❌ ERROR REGISTRANDO/IMPRIMIENDO:", error);
-
-                // La venta puede haber quedado registrada aunque la impresión falle.
-                alert(
-                    "⚠️ La venta puede haber sido registrada, pero la impresión falló.\n\n" +
-                    "Detalle: " + error.message
-                );
+                console.error("❌ ERROR:", error);
+                alert("⚠️ Ocurrió un error:\n\n" + error.message);
             }
         }
 
         async function actualizarVentasTurno() {
             try {
-                let res = await fetch(API_URL + "?action=getVentas");
-                let ventas = await res.json();
+                let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
                 ventasCache = ventas;
                 ultimaActualizacionCache = Date.now();
                 
@@ -890,8 +1036,7 @@
         async function marcarRendido() {
             if (confirm("¿Confirmar cierre de turno? El contador volverá a 0 Gs.")) {
                 try {
-                    let res = await fetch(API_URL + "?action=getVentas");
-                    let ventas = await res.json();
+                    let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
                     localStorage.setItem('zoe_indice_corte', ventas.length);
                     document.getElementById('ventas-turno-total').textContent = "0 Gs.";
                     document.getElementById('ventas-cierre-total').textContent = "0 Gs.";
@@ -902,8 +1047,7 @@
 
         async function cargarPedidosCocina() {
             try {
-                let res = await fetch(API_URL + "?action=getVentas");
-                let ventas = await res.json();
+                let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
                 ventasCache = ventas;
                 ultimaActualizacionCache = Date.now();
                 
@@ -1010,7 +1154,7 @@
         async function archivarPedido(ordenId) {
             if (!confirm(`¿Archivar pedido #${ordenId}?\n\nDesaparecerá de la vista de cocina.`)) return;
             try {
-                console.log("️ Archivando pedido:", ordenId);
+                console.log("🗑️ Archivando pedido:", ordenId);
                 const res = await fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -1020,7 +1164,7 @@
                 let resultado;
                 try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error en la respuesta del servidor"); return; }
                 
-                if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo archivar")); return; }
+                if (resultado.status !== "success") { alert(" " + (resultado.mensaje || "No se pudo archivar")); return; }
                 
                 ventasCache = [];
                 ultimaActualizacionCache = null;
@@ -1036,8 +1180,7 @@
 
         async function cargarStock() {
             try {
-                let res = await fetch(API_URL + "?action=getStock");
-                let productos = await res.json();
+                let productos = await fetchConReintentos(API_URL + "?action=getStock");
                 let html = "";
                 productos.forEach(p => {
                     let id = p.ID || p.id || "";
@@ -1124,8 +1267,8 @@
             let nombre = document.getElementById('img-prod-nombre').value;
             let url = document.getElementById('img-prod-url').value.trim();
             let imagenAGuardar = imagenBase64 || url;
-            if (!imagenAGuardar) { alert("️ Debes seleccionar una imagen o pegar una URL válida."); return; }
-            if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("️ La imagen es muy grande. Usa una más pequeña o súbela a imgur.com"); return; }
+            if (!imagenAGuardar) { alert("⚠️ Debes seleccionar una imagen o pegar una URL válida."); return; }
+            if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("⚠️ La imagen es muy grande. Usa una más pequeña o súbela a imgur.com"); return; }
             try {
                 const res = await fetch(API_URL, {
                     method: "POST",
@@ -1138,12 +1281,11 @@
                     alert("✅ Imagen guardada correctamente");
                     cargarStock(); cargarProductosCaja();
                 } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo guardar")); }
-            } catch (e) { console.error("❌ Error detallado:", e); alert("❌ Error de conexión al guardar."); }
+            } catch (e) { console.error(" Error detallado:", e); alert("❌ Error de conexión al guardar."); }
         }
 
         async function abrirModalReceta(productoId, productoNombre) {
-            let res = await fetch(API_URL + "?action=getStock");
-            let productos = await res.json();
+            let productos = await fetchConReintentos(API_URL + "?action=getStock");
             let ingredientes = productos.filter(p => (p.Categoria || "").toLowerCase() === "ingrediente");
             let producto = productos.find(p => p.ID === productoId);
             let recetaActual = producto.Receta || [];
@@ -1176,7 +1318,7 @@
                 if (resultado.status === "success") {
                     btn.innerHTML = '<i class="fa-solid fa-check"></i>'; btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-success');
                     setTimeout(() => { btn.innerHTML = '<i class="fa-solid fa-save"></i>'; btn.classList.remove('btn-success'); btn.classList.add('btn-outline-primary'); }, 1500);
-                } else { alert(" Error: " + (resultado.mensaje || "No se pudo guardar")); }
+                } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo guardar")); }
             } catch (e) { console.error("❌ Error:", e); alert("❌ Error de conexión."); }
         }
 
@@ -1193,18 +1335,15 @@
             calcularBalance();
         }
 
-        // ✅ FUNCIÓN CORREGIDA: Convierte números seriales de Google Sheets a fechas
         function serialGoogleSheetsAFecha(serial) {
             const epoch = new Date(1899, 11, 30);
             const fecha = new Date(epoch.getTime() + serial * 86400000);
             return fecha;
         }
 
-        // ✅ FUNCIÓN CORREGIDA: Maneja múltiples formatos incluyendo objetos Date
         function normalizarFecha(fechaStr) {
             if (!fechaStr && fechaStr !== 0) return null;
             
-            // ✅ Si es un objeto Date de JavaScript
             if (fechaStr instanceof Date) {
                 const anio = fechaStr.getFullYear();
                 const mes = String(fechaStr.getMonth() + 1).padStart(2, '0');
@@ -1212,7 +1351,6 @@
                 return `${anio}-${mes}-${dia}`;
             }
             
-            // ✅ Si es un número (serial de Google Sheets)
             if (typeof fechaStr === 'number' || (!isNaN(parseFloat(fechaStr)) && isFinite(fechaStr))) {
                 const serial = parseFloat(fechaStr);
                 if (serial > 1000) {
@@ -1226,7 +1364,6 @@
             
             let s = String(fechaStr).trim();
             
-            // ✅ Si contiene "GMT" o es un string de fecha larga de JavaScript
             if (s.includes('GMT') || s.includes('Jan') || s.includes('Feb') || s.includes('Mar') || 
                 s.includes('Apr') || s.includes('May') || s.includes('Jun') || s.includes('Jul') || 
                 s.includes('Aug') || s.includes('Sep') || s.includes('Oct') || s.includes('Nov') || s.includes('Dec')) {
@@ -1243,14 +1380,12 @@
                 }
             }
             
-            // Si contiene 'T', es formato ISO
             if (s.includes('T')) {
                 return s.split('T')[0];
             }
             
             s = s.split(' ')[0];
             
-            // Formato DD/MM/YYYY o D/M/YYYY
             if (s.includes('/')) {
                 let p = s.split('/');
                 if (p.length === 3) {
@@ -1262,14 +1397,12 @@
                 }
             }
             
-            // Formato YYYY-MM-DD
             if (s.includes('-') && s.length === 10) {
                 let p = s.split('-');
                 if (p[0].length === 4) return s;
                 if (p[2].length === 4) return `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`;
             }
             
-            // Ya está en formato YYYY-MM-DD
             if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
                 return s;
             }
@@ -1281,22 +1414,15 @@
             let filtroMes = document.getElementById('filtro-mes').value;
             let filtroDia = document.getElementById('filtro-dia').value;
             
-            console.log("🔍 Filtros aplicados:", { filtroMes, filtroDia });
-            
             try {
-                let resV = await fetch(API_URL + "?action=getVentas");
-                let ventas = await resV.json();
+                let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
                 let totalVentas = 0;
-                
-                console.log(" Total de ventas recibidas:", ventas.length);
                 
                 ventas.forEach(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
                     if (estado !== "cancelado" && estado !== "archivado") {
                         let fechaOriginal = v.Fecha || v.FECHA || v.fecha || "";
                         let fechaNorm = normalizarFecha(fechaOriginal);
-                        
-                        console.log("📅 Fecha original:", fechaOriginal, "→ Normalizada:", fechaNorm);
                         
                         let pasaFiltro = true;
                         
@@ -1313,19 +1439,12 @@
                     }
                 });
                 
-                console.log("💰 Total Ventas calculado:", totalVentas);
-                
-                let resG = await fetch(API_URL + "?action=getGastos");
-                let gastos = await resG.json();
+                let gastos = await fetchConReintentos(API_URL + "?action=getGastos");
                 let totalGastos = 0;
-                
-                console.log(" Total de gastos recibidos:", gastos.length);
                 
                 gastos.forEach(g => {
                     let fechaOriginal = g.Fecha || g.FECHA || g.fecha || "";
                     let fechaNorm = normalizarFecha(fechaOriginal);
-                    
-                    console.log("📅 Fecha gasto original:", fechaOriginal, "→ Normalizada:", fechaNorm);
                     
                     let pasaFiltro = true;
                     
@@ -1339,8 +1458,6 @@
                         totalGastos += Number(g.Monto || g.MONTO || g.monto || 0) || 0;
                     }
                 });
-                
-                console.log("💸 Total Gastos calculado:", totalGastos);
 
                 document.getElementById('balance-ventas').textContent = totalVentas.toLocaleString() + " Gs.";
                 document.getElementById('balance-gastos').textContent = totalGastos.toLocaleString() + " Gs.";
@@ -1371,7 +1488,7 @@
                 document.getElementById("gasto-desc").value = "";
                 document.getElementById("gasto-monto").value = "";
                 calcularBalance();
-            } catch (e) { console.error(e); alert(" Error al guardar gasto.\n\n" + e.message); }
+            } catch (e) { console.error(e); alert("❌ Error al guardar gasto.\n\n" + e.message); }
         }
 
         async function buscarPedidosParaCancelar(forzarRecarga = false) {
@@ -1387,8 +1504,7 @@
             } else {
                 console.log("🔄 Cargando ventas desde servidor...");
                 try {
-                    let res = await fetch(API_URL + "?action=getVentas");
-                    ventas = await res.json();
+                    ventas = await fetchConReintentos(API_URL + "?action=getVentas");
                     ventasCache = ventas;
                     ultimaActualizacionCache = ahora;
                 } catch (e) {
