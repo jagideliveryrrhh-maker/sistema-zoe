@@ -6,6 +6,7 @@
     <title>ZOE FAT FOOD - Sistema de Gestión</title>
     <link rel="icon" type="image/png" href="/zoe-icon.png">
     <link rel="apple-touch-icon" href="/zoe-icon.png">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="ZOE">
     <meta name="theme-color" content="#dc3545">
@@ -25,6 +26,12 @@
         #kds-pedidos { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 15px; }
         .kds-card { border-left: 5px solid #ffc107; transition: all 0.4s ease; margin-bottom: 0; height: 100%; }
         .kds-card.cancelado { border-left: 5px solid #dc3545; background-color: #f8d7da; opacity: 0.85; }
+        .kds-card.pendiente { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+        }
         .kds-orden-numero { font-size: 1.3rem; font-weight: 800; color: #dc3545; margin: 0; }
         .kds-cliente { font-size: 0.95rem; color: #555; margin: 6px 0 10px 0; font-weight: 600; }
         .kds-productos-lista { background: #f8f9fa; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; border: 1px solid #e9ecef; }
@@ -38,6 +45,20 @@
         .cancelar-card .orden-numero { font-weight: 800; color: #dc3545; font-size: 1.1rem; }
         .receta-item { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
         .receta-ingrediente { font-weight: 600; color: #495057; }
+        .indicador-actualizacion {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #198754;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+        }
+        .indicador-actualizacion.mostrar { opacity: 1; }
         @media print {
             @page { margin: 0; size: 58mm auto; }
             body * { visibility: hidden; }
@@ -86,6 +107,11 @@
                 </div>
             </div>
         </nav>
+
+        <!-- Indicador de actualización automática -->
+        <div id="indicador-actualizacion" class="indicador-actualizacion">
+            <i class="fa-solid fa-sync fa-spin"></i> Actualizando...
+        </div>
 
         <div class="container-fluid mt-3 pb-5">
             <ul class="nav nav-pills mb-3 flex-nowrap overflow-auto" id="pills-tab" role="tablist">
@@ -142,7 +168,10 @@
                 <div class="tab-pane fade" id="tab-cocina">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h4><i class="fa-solid fa-fire-burner text-danger"></i> Pedidos en Cocina</h4>
-                        <button class="btn btn-outline-dark btn-sm" onclick="cargarPedidosCocina()"><i class="fa-solid fa-rotate"></i> Actualizar</button>
+                        <div>
+                            <span class="badge bg-info me-2" id="contador-pedidos">0 pedidos</span>
+                            <button class="btn btn-outline-dark btn-sm" onclick="cargarPedidosCocina()"><i class="fa-solid fa-rotate"></i> Actualizar</button>
+                        </div>
                     </div>
                     <div id="kds-pedidos"></div>
                 </div>
@@ -278,7 +307,9 @@
     <script>
         const API_URL = "https://script.google.com/macros/s/AKfycbzMnAiTrtGtAloeEr45kXMoNEiZPM4JDi-6V46EpL9kAUBMNo0PIjp3dGNGv1FecPTW_Q/exec";
         const SESION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
+        const INTERVALO_COCINA_MS = 5000; // Actualización automática cada 5 segundos
         let usuarios = [], sesion = null, listaProductos = [], carrito = [], filtroActivo = 'ninguno', imagenBase64 = "";
+        let intervaloCocina = null;
 
         function verificarSesion() {
             const lastActivity = parseInt(localStorage.getItem('zoe_last_activity') || '0');
@@ -319,6 +350,7 @@
             } else { error.textContent = "Usuario o contraseña incorrectos"; error.classList.remove('d-none'); }
         }
 
+        // ✅ CON ACTUALIZACIÓN AUTOMÁTICA DE COCINA
         function ingresarAlSistema() {
             document.getElementById('pantalla-login').classList.add('oculto');
             document.getElementById('sistema').classList.remove('oculto');
@@ -334,10 +366,49 @@
                 setTimeout(() => new bootstrap.Tab(document.querySelector('[data-bs-target="#tab-cocina"]')).show(), 100);
             }
             cargarTodo();
+            
+            // ✅ INICIAR ACTUALIZACIÓN AUTOMÁTICA DE COCINA
+            if (sesion.rol === "COCINA" || sesion.rol === "ADMIN") {
+                iniciarActualizacionAutomaticaCocina();
+            }
+        }
+
+        // ✅ FUNCIÓN: Iniciar polling automático de cocina
+        function iniciarActualizacionAutomaticaCocina() {
+            // Limpiar intervalo anterior si existe
+            if (intervaloCocina) {
+                clearInterval(intervaloCocina);
+            }
+            
+            // Actualizar cada 5 segundos
+            intervaloCocina = setInterval(() => {
+                const tabCocina = document.getElementById('tab-cocina');
+                if (tabCocina && tabCocina.classList.contains('show')) {
+                    console.log('🔄 Actualización automática de cocina...');
+                    mostrarIndicadorActualizacion();
+                    cargarPedidosCocina();
+                }
+            }, INTERVALO_COCINA_MS);
+            
+            console.log('✅ Actualización automática de cocina iniciada (cada ' + (INTERVALO_COCINA_MS/1000) + 's)');
+        }
+
+        // ✅ Mostrar indicador visual de actualización
+        function mostrarIndicadorActualizacion() {
+            const indicador = document.getElementById('indicador-actualizacion');
+            if (indicador) {
+                indicador.classList.add('mostrar');
+                setTimeout(() => {
+                    indicador.classList.remove('mostrar');
+                }, 1500);
+            }
         }
 
         function cerrarSesion() {
-            if (confirm("¿Cerrar sesión?")) { localStorage.removeItem('zoe_sesion'); localStorage.removeItem('zoe_last_activity'); location.reload(); }
+            if (confirm("¿Cerrar sesión?")) {
+                if (intervaloCocina) clearInterval(intervaloCocina);
+                localStorage.removeItem('zoe_sesion'); localStorage.removeItem('zoe_last_activity'); location.reload();
+            }
         }
 
         function cargarTodo() {
@@ -415,7 +486,7 @@
             renderizarCarrito();
         }
 
-        // ✅ FUNCIÓN CRÍTICA: POST con text/plain para evitar CORS
+        // ✅ FUNCIÓN CRÍTICA: POST con text/plain + ACTUALIZACIÓN AUTOMÁTICA DE COCINA
         async function cobrarEImprimir() {
             if (carrito.length === 0) {
                 alert("El carrito está vacío.");
@@ -436,9 +507,7 @@
 
                 const res = await fetch(API_URL, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "text/plain;charset=utf-8"
-                    },
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
                     body: JSON.stringify({
                         action: "registrarVenta",
                         idOrden: ordenId,
@@ -458,7 +527,7 @@
                 try {
                     resultado = JSON.parse(texto);
                 } catch (e) {
-                    alert(" Apps Script respondió algo inesperado.\n\n" + texto.substring(0, 300));
+                    alert("❌ Apps Script respondió algo inesperado.\n\n" + texto.substring(0, 300));
                     return;
                 }
 
@@ -489,7 +558,13 @@
                 await actualizarVentasTurno();
                 await cargarProductosCaja();
 
-                alert("✅ VENTA REGISTRADA\n\nOrden #" + ordenId + "\nTotal: " + total.toLocaleString() + " Gs.");
+                // ✅ ACTUALIZAR COCINA AUTOMÁTICAMENTE DESPUÉS DE VENDER
+                if (typeof cargarPedidosCocina === "function") {
+                    await cargarPedidosCocina();
+                    console.log('🍳 Cocina actualizada automáticamente tras la venta');
+                }
+
+                alert("✅ VENTA REGISTRADA\n\nOrden #" + ordenId + "\nTotal: " + total.toLocaleString() + " Gs.\n\nEl pedido ya está en Cocina.");
 
             } catch (error) {
                 console.error("❌ ERROR REGISTRANDO VENTA:", error);
@@ -530,6 +605,7 @@
             }
         }
 
+        // ✅ COCINA CON CONTADOR Y ACTUALIZACIÓN AUTOMÁTICA
         async function cargarPedidosCocina() {
             try {
                 let res = await fetch(API_URL + "?action=getVentas");
@@ -539,13 +615,34 @@
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
                     return estado === "pendiente" || estado === "cancelado";
                 });
+                
+                // Actualizar contador
+                const contador = document.getElementById('contador-pedidos');
+                if (contador) {
+                    const pendientes = pedidosVisibles.filter(v => 
+                        String(v.Estado || "").trim().toLowerCase() === "pendiente"
+                    ).length;
+                    contador.textContent = pendientes + ' pendiente' + (pendientes !== 1 ? 's' : '');
+                    contador.className = pendientes > 0 ? 'badge bg-warning text-dark me-2' : 'badge bg-success me-2';
+                }
+                
                 if (pedidosVisibles.length === 0) {
                     document.getElementById('kds-pedidos').innerHTML = '<div class="text-center text-muted py-5" style="grid-column: 1/-1;"><h5><i class="fa-solid fa-check-circle text-success"></i> No hay pedidos pendientes</h5></div>';
                     return;
                 }
+                
+                // Ordenar: pendientes primero, luego cancelados
+                pedidosVisibles.sort((a, b) => {
+                    const estadoA = String(a.Estado || "").trim().toLowerCase();
+                    const estadoB = String(b.Estado || "").trim().toLowerCase();
+                    if (estadoA === 'pendiente' && estadoB !== 'pendiente') return -1;
+                    if (estadoA !== 'pendiente' && estadoB === 'pendiente') return 1;
+                    return 0;
+                });
+                
                 pedidosVisibles.forEach(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
-                    let claseCard = estado === "cancelado" ? "cancelado" : "";
+                    let claseCard = estado === "cancelado" ? "cancelado" : (estado === "pendiente" ? "pendiente" : "");
                     let ordenIdRaw = String(v.ID_Orden || v.idOrden || '');
                     let ordenId = ordenIdRaw.replace(/[^0-9]/g, "");
                     if (ordenId.length > 6) ordenId = ordenId.slice(-4);
@@ -586,7 +683,7 @@
                 const resultado = await res.json();
                 if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo actualizar el pedido")); return; }
                 await cargarPedidosCocina();
-            } catch (e) { console.error(e); alert("❌ Error al actualizar el estado.\n\n" + e.message); }
+            } catch (e) { console.error(e); alert(" Error al actualizar el estado.\n\n" + e.message); }
         }
 
         async function archivarPedido(ordenId) {
@@ -649,7 +746,7 @@
         function previsualizarImagenLocal(event) {
             let file = event.target.files[0];
             if (!file) return;
-            if (!file.type.startsWith('image/')) { alert("⚠️ El archivo debe ser una imagen (JPG, PNG)"); return; }
+            if (!file.type.startsWith('image/')) { alert("️ El archivo debe ser una imagen (JPG, PNG)"); return; }
             let reader = new FileReader();
             reader.onload = function(e) {
                 let img = new Image();
@@ -693,7 +790,7 @@
             let nombre = document.getElementById('img-prod-nombre').value;
             let url = document.getElementById('img-prod-url').value.trim();
             let imagenAGuardar = imagenBase64 || url;
-            if (!imagenAGuardar) { alert("️ Debes seleccionar una imagen desde tu computadora o pegar una URL válida."); return; }
+            if (!imagenAGuardar) { alert("⚠️ Debes seleccionar una imagen desde tu computadora o pegar una URL válida."); return; }
             if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("️ La imagen sigue siendo muy grande (" + Math.round(imagenAGuardar.length/1024) + " KB).\n\nPor favor:\n1. Usa una imagen más pequeña\n2. O súbela a imgur.com y pega el link"); return; }
             try {
                 const res = await fetch(API_URL, {
@@ -899,48 +996,29 @@
             }
         }
 
-        // ✅ FUNCIÓN CRÍTICA: POST con text/plain para evitar CORS
         async function cancelarDesdeCaja(ordenId) {
             try {
                 let idLimpio = String(ordenId || "").replace(/[^0-9]/g, "");
-                if (!idLimpio) {
-                    alert("❌ ID de pedido inválido.");
-                    return;
-                }
+                if (!idLimpio) { alert("❌ ID de pedido inválido."); return; }
                 idLimpio = idLimpio.slice(-4);
                 console.log("🔄 Cancelando pedido:", idLimpio);
 
                 const res = await fetch(API_URL, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "text/plain;charset=utf-8"
-                    },
-                    body: JSON.stringify({
-                        action: "cancelarPedido",
-                        criterio: idLimpio
-                    })
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify({ action: "cancelarPedido", criterio: idLimpio })
                 });
 
                 const texto = await res.text();
                 console.log("📥 Respuesta cancelación:", texto);
 
                 let resultado;
-                try {
-                    resultado = JSON.parse(texto);
-                } catch (e) {
-                    alert("❌ Respuesta inválida de Google Sheets.\n\n" + texto.substring(0, 300));
-                    return;
-                }
+                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Respuesta inválida de Google Sheets.\n\n" + texto.substring(0, 300)); return; }
 
-                if (resultado.status !== "success") {
-                    alert("❌ NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido."));
-                    return;
-                }
+                if (resultado.status !== "success") { alert("❌ NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido.")); return; }
 
                 const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos"));
-                if (modal) {
-                    modal.hide();
-                }
+                if (modal) modal.hide();
 
                 alert("✅ PEDIDO CANCELADO\n\nOrden #" + idLimpio + "\n\nEl total fue puesto en 0 Gs.\nEl stock fue reintegrado.");
 
@@ -948,17 +1026,12 @@
 
                 await actualizarVentasTurno();
                 await cargarProductosCaja();
-
-                if (typeof cargarStock === "function") {
-                    await cargarStock();
-                }
-                if (typeof cargarPedidosCocina === "function") {
-                    await cargarPedidosCocina();
-                }
+                await cargarPedidosCocina();
+                if (typeof cargarStock === "function") await cargarStock();
 
             } catch (error) {
                 console.error("❌ ERROR REAL AL CANCELAR:", error);
-                alert("❌ NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nEl pedido NO fue cancelado.\n\nDetalle: " + error.message);
+                alert(" NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nEl pedido NO fue cancelado.\n\nDetalle: " + error.message);
             }
         }
     </script>
