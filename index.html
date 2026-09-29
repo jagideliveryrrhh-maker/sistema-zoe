@@ -268,7 +268,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // ✅ TU NUEVA URL DE APPS SCRIPT
         const API_URL = "https://script.google.com/macros/s/AKfycbzd0p4S7v_cl-i8p_m_Hdnbthr-vw0kMasUdBtPU_OA1gz6FmuNGYRGp7uVxfJqYxld/exec";
         const SESION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
         const INTERVALO_COCINA_MS = 5000;
@@ -435,7 +434,7 @@
             renderizarCarrito();
         }
 
-        // ✅ IMPRESIÓN EN VENTANA NUEVA + ACTUALIZACIÓN DE COCINA
+        // ✅ IMPRESIÓN OPTIMIZADA: No bloquea la interfaz y limpia el carrito al instante
         async function cobrarEImprimir() {
             if (carrito.length === 0) { alert("El carrito está vacío."); return; }
 
@@ -446,7 +445,8 @@
             let productosStr = carrito.map(function(i) { return i.cantidad + "x " + i.nombre; }).join(", ");
 
             try {
-                const res = await fetch(API_URL, {
+                // 1️⃣ REGISTRAR VENTA EN SEGUNDO PLANO (sin await para que no bloquee)
+                fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
                     body: JSON.stringify({
@@ -454,19 +454,18 @@
                         cliente: cliente, hora: ahora.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                         productos: productosStr, total: total + " Gs.", estado: "Pendiente"
                     })
-                });
+                }).then(res => res.text())
+                  .then(texto => {
+                      try {
+                          let resultado = JSON.parse(texto);
+                          if (resultado.status === "success") {
+                              console.log("✅ Venta registrada:", ordenId);
+                          }
+                      } catch (e) { console.error("Error parseando respuesta:", e); }
+                  })
+                  .catch(err => console.error("❌ Error al registrar venta:", err));
 
-                const texto = await res.text();
-                let resultado;
-                try { resultado = JSON.parse(texto); } catch (e) {
-                    alert("❌ Apps Script respondió algo inesperado.\n\n" + texto.substring(0, 300)); return;
-                }
-
-                if (resultado.status !== "success") {
-                    alert(" LA VENTA NO SE GUARDÓ\n\n" + (resultado.mensaje || "Error desconocido.")); return;
-                }
-
-                // ✅ CREAR VENTANA NUEVA SOLO CON EL TICKET
+                // 2️⃣ CREAR Y ABRIR TICKET INMEDIATAMENTE
                 let itemsHTML = carrito.map(i => 
                     `<div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px;">
                         <span>${i.cantidad}x ${i.nombre}</span>
@@ -496,7 +495,14 @@
                     <div class="item total"><span>TOTAL</span><span>${total.toLocaleString()} Gs.</span></div>
                     <div class="linea"></div>
                     <div class="centro" style="font-size: 10px; margin-top: 10px;">¡Gracias por su compra!</div>
-                    <script>window.onload = function() { window.print(); setTimeout(() => window.close(), 500); };<\/script>
+                    <script>
+                        window.onload = function() { 
+                            setTimeout(() => { 
+                                window.print(); 
+                                setTimeout(() => window.close(), 1000); 
+                            }, 200); 
+                        };
+                    <\/script>
                 </body></html>`;
 
                 let ventanaImpresion = window.open('', '_blank', 'width=300,height=600');
@@ -505,21 +511,22 @@
                     ventanaImpresion.document.close();
                 } else {
                     alert("⚠️ Por favor permite las ventanas emergentes para imprimir el ticket.");
+                    return;
                 }
 
-                // Limpiar carrito solo después del éxito
+                // 3️⃣ LIMPIAR CARRITO INMEDIATAMENTE (sin esperar a la red)
                 carrito = [];
                 document.getElementById("cliente-nombre").value = "";
                 renderizarCarrito();
 
-                await actualizarVentasTurno();
-                await cargarProductosCaja();
-                if (typeof cargarPedidosCocina === "function") {
-                    await cargarPedidosCocina(); // ✅ Actualiza cocina inmediatamente
-                }
-
-                // ✅ MENSAJE ELIMINADO - Ya no aparece el alert
-                // alert("✅ VENTA REGISTRADA\n\nOrden #" + ordenId + "\nTotal: " + total.toLocaleString() + " Gs.");
+                // 4️⃣ ACTUALIZAR DATOS EN SEGUNDO PLANO (sin bloquear la UI)
+                setTimeout(() => {
+                    actualizarVentasTurno();
+                    cargarProductosCaja();
+                    if (typeof cargarPedidosCocina === "function") {
+                        cargarPedidosCocina();
+                    }
+                }, 500);
 
             } catch (error) {
                 console.error("❌ ERROR REGISTRANDO VENTA:", error);
@@ -560,14 +567,12 @@
             }
         }
 
-        // ✅ COCINA CON CORRECCIÓN DE NOMBRE DE CLIENTE Y FILTRO DE ARCHIVADO
         async function cargarPedidosCocina() {
             try {
                 let res = await fetch(API_URL + "?action=getVentas");
                 let ventas = await res.json();
                 let html = "";
                 
-                // ✅ Filtrar SOLO pendiente y cancelado. "archivado" y "realizado" NO aparecen.
                 let pedidosVisibles = ventas.slice(-30).reverse().filter(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
                     return estado === "pendiente" || estado === "cancelado";
@@ -602,9 +607,7 @@
                     if (ordenId.length > 6) ordenId = ordenId.slice(-4);
                     if (!ordenId) ordenId = "???";
                     
-                    // ✅ CORRECCIÓN: Buscar el nombre del cliente en múltiples posibles claves
                     let cliente = v.Cliente || v.Client || v.cliente || v.client || "Sin cliente";
-                    
                     let productosRaw = v.Productos || v.productos || v.Product || v.product || "Sin productos";
                     let hora = v.Hora || v.hora || "";
                     
@@ -664,11 +667,10 @@
             } catch (e) { console.error(e); alert("❌ Error al actualizar.\n\n" + e.message); }
         }
 
-        // ✅ ARCHIVAR CON FORZADO DE RECARGA PARA QUE DESAPAREZCA
         async function archivarPedido(ordenId) {
             if (!confirm(`¿Archivar pedido #${ordenId}?\n\nDesaparecerá de la vista de cocina.`)) return;
             try {
-                console.log("️ Archivando pedido:", ordenId);
+                console.log("🗑️ Archivando pedido:", ordenId);
                 const res = await fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -680,7 +682,6 @@
                 
                 if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo archivar")); return; }
                 
-                // ✅ FORZAR RECARGA COMPLETA PARA QUE DESAPAREZCA
                 console.log("✅ Pedido archivado, recargando vista...");
                 await cargarPedidosCocina();
                 alert("✅ Pedido archivado correctamente");
@@ -736,7 +737,7 @@
         function previsualizarImagenLocal(event) {
             let file = event.target.files[0];
             if (!file) return;
-            if (!file.type.startsWith('image/')) { alert("️ El archivo debe ser una imagen (JPG, PNG)"); return; }
+            if (!file.type.startsWith('image/')) { alert("⚠️ El archivo debe ser una imagen (JPG, PNG)"); return; }
             let reader = new FileReader();
             reader.onload = function(e) {
                 let img = new Image();
@@ -770,7 +771,7 @@
             let tamanoInfo = document.getElementById('img-tamano-info');
             if (url) {
                 preview.src = url; preview.style.display = "block"; placeholder.style.display = "none"; tamanoInfo.classList.add('d-none');
-                preview.onerror = function() { this.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = " No se pudo cargar la imagen. Verifica la URL."; };
+                preview.onerror = function() { this.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = "❌ No se pudo cargar la imagen. Verifica la URL."; };
                 imagenBase64 = "";
             } else { preview.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = "La imagen aparecerá aquí"; }
         }
