@@ -51,11 +51,6 @@
             transition: opacity 0.3s; z-index: 1000;
         }
         .indicador-actualizacion.mostrar { opacity: 1; }
-        .ultima-actualizacion {
-            font-size: 0.75rem;
-            color: #6c757d;
-            margin-left: 10px;
-        }
     </style>
 </head>
 <body>
@@ -291,11 +286,9 @@
         const INTERVALO_COCINA_MS = 5000;
         let usuarios = [], sesion = null, listaProductos = [], carrito = [], filtroActivo = 'ninguno', imagenBase64 = "";
         let intervaloCocina = null;
-        
-        // ✅ NUEVO: Caché de ventas para "Ver Pedidos" instantáneo
         let ventasCache = [];
         let ultimaActualizacionCache = null;
-        const TIEMPO_CACHE_MS = 10000; // 10 segundos de caché
+        const TIEMPO_CACHE_MS = 10000;
 
         function verificarSesion() {
             const lastActivity = parseInt(localStorage.getItem('zoe_last_activity') || '0');
@@ -481,7 +474,6 @@
                           let resultado = JSON.parse(texto);
                           if (resultado.status === "success") {
                               console.log("✅ Venta registrada:", ordenId);
-                              // ✅ Invalidar caché después de registrar venta
                               ventasCache = [];
                               ultimaActualizacionCache = null;
                           }
@@ -533,7 +525,7 @@
                     ventanaImpresion.document.write(ticketHTML);
                     ventanaImpresion.document.close();
                 } else {
-                    alert("️ Por favor permite las ventanas emergentes para imprimir el ticket.");
+                    alert("⚠️ Por favor permite las ventanas emergentes para imprimir el ticket.");
                     return;
                 }
 
@@ -550,7 +542,7 @@
                 }, 500);
 
             } catch (error) {
-                console.error(" ERROR REGISTRANDO VENTA:", error);
+                console.error("❌ ERROR REGISTRANDO VENTA:", error);
                 alert("❌ NO SE PUDO GUARDAR LA VENTA\n\nDetalle: " + error.message);
             }
         }
@@ -559,7 +551,6 @@
             try {
                 let res = await fetch(API_URL + "?action=getVentas");
                 let ventas = await res.json();
-                // ✅ Actualizar caché
                 ventasCache = ventas;
                 ultimaActualizacionCache = Date.now();
                 
@@ -596,7 +587,6 @@
             try {
                 let res = await fetch(API_URL + "?action=getVentas");
                 let ventas = await res.json();
-                // ✅ Actualizar caché
                 ventasCache = ventas;
                 ultimaActualizacionCache = Date.now();
                 
@@ -692,7 +682,6 @@
                 
                 if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo actualizar")); return; }
                 
-                // ✅ Invalidar caché
                 ventasCache = [];
                 ultimaActualizacionCache = null;
                 
@@ -716,7 +705,6 @@
                 
                 if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo archivar")); return; }
                 
-                // ✅ Invalidar caché
                 ventasCache = [];
                 ultimaActualizacionCache = null;
                 
@@ -724,7 +712,7 @@
                 await cargarPedidosCocina();
                 alert("✅ Pedido archivado correctamente");
             } catch (e) { 
-                console.error("❌ Error al archivar:", e); 
+                console.error(" Error al archivar:", e); 
                 alert("❌ Error de conexión al archivar.\n\n" + e.message); 
             }
         }
@@ -888,67 +876,143 @@
             calcularBalance();
         }
 
+        // ✅ FUNCIÓN CORREGIDA: Convierte números seriales de Google Sheets a fechas
+        function serialGoogleSheetsAFecha(serial) {
+            // Los números seriales de Google Sheets cuentan días desde el 30/12/1899
+            const epoch = new Date(1899, 11, 30);
+            const fecha = new Date(epoch.getTime() + serial * 86400000);
+            return fecha;
+        }
+
+        // ✅ FUNCIÓN CORREGIDA: Normaliza fechas de múltiples formatos
         function normalizarFecha(fechaStr) {
-            if (!fechaStr) return null;
+            if (!fechaStr && fechaStr !== 0) return null;
+            
+            // Si es un número (serial de Google Sheets)
+            if (typeof fechaStr === 'number' || (!isNaN(parseFloat(fechaStr)) && isFinite(fechaStr))) {
+                const serial = parseFloat(fechaStr);
+                // Si es mayor a 1000, probablemente es un serial de Google Sheets
+                if (serial > 1000) {
+                    const fecha = serialGoogleSheetsAFecha(serial);
+                    const anio = fecha.getFullYear();
+                    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+                    const dia = String(fecha.getDate()).padStart(2, '0');
+                    return `${anio}-${mes}-${dia}`;
+                }
+            }
+            
             let s = String(fechaStr).trim();
-            if (s.includes('T')) return s.split('T')[0];
+            
+            // Si contiene 'T', es formato ISO
+            if (s.includes('T')) {
+                return s.split('T')[0];
+            }
+            
             s = s.split(' ')[0];
+            
+            // Formato DD/MM/YYYY o D/M/YYYY
             if (s.includes('/')) {
                 let p = s.split('/');
                 if (p.length === 3) {
-                    let dia = p[0].padStart(2, '0'), mes = p[1].padStart(2, '0'), anio = p[2];
+                    let dia = p[0].padStart(2, '0');
+                    let mes = p[1].padStart(2, '0');
+                    let anio = p[2];
                     if (anio.length === 2) anio = "20" + anio;
                     return `${anio}-${mes}-${dia}`;
                 }
             }
+            
+            // Formato YYYY-MM-DD
             if (s.includes('-') && s.length === 10) {
                 let p = s.split('-');
                 if (p[0].length === 4) return s;
                 if (p[2].length === 4) return `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`;
             }
-            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+            
+            // Ya está en formato YYYY-MM-DD
+            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+                return s;
+            }
+            
             return null;
         }
 
         async function calcularBalance() {
             let filtroMes = document.getElementById('filtro-mes').value;
             let filtroDia = document.getElementById('filtro-dia').value;
+            
+            console.log("🔍 Filtros aplicados:", { filtroMes, filtroDia });
+            
             try {
                 let resV = await fetch(API_URL + "?action=getVentas");
                 let ventas = await resV.json();
                 let totalVentas = 0;
+                
+                console.log("📊 Total de ventas recibidas:", ventas.length);
+                
                 ventas.forEach(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
                     if (estado !== "cancelado" && estado !== "archivado") {
                         let fechaOriginal = v.Fecha || v.FECHA || v.fecha || "";
                         let fechaNorm = normalizarFecha(fechaOriginal);
+                        
+                        console.log("📅 Fecha original:", fechaOriginal, "→ Normalizada:", fechaNorm);
+                        
                         let pasaFiltro = true;
-                        if (filtroDia) { if (fechaNorm !== filtroDia) pasaFiltro = false; }
-                        else if (filtroMes) { if (!fechaNorm || !fechaNorm.startsWith(filtroMes)) pasaFiltro = false; }
+                        
+                        if (filtroDia) {
+                            // filtroDia viene en formato YYYY-MM-DD
+                            if (fechaNorm !== filtroDia) pasaFiltro = false;
+                        } else if (filtroMes) {
+                            // filtroMes viene en formato YYYY-MM
+                            if (!fechaNorm || !fechaNorm.startsWith(filtroMes)) pasaFiltro = false;
+                        }
+
                         if (pasaFiltro) {
                             let totalStr = String(v.Total || v.TOTAL || v.total || "0");
                             totalVentas += Number(totalStr.replace(/[^0-9]/g, "")) || 0;
                         }
                     }
                 });
+                
+                console.log("💰 Total Ventas calculado:", totalVentas);
+                
                 let resG = await fetch(API_URL + "?action=getGastos");
                 let gastos = await resG.json();
                 let totalGastos = 0;
+                
+                console.log("📊 Total de gastos recibidos:", gastos.length);
+                
                 gastos.forEach(g => {
                     let fechaOriginal = g.Fecha || g.FECHA || g.fecha || "";
                     let fechaNorm = normalizarFecha(fechaOriginal);
+                    
+                    console.log("📅 Fecha gasto original:", fechaOriginal, "→ Normalizada:", fechaNorm);
+                    
                     let pasaFiltro = true;
-                    if (filtroDia) { if (fechaNorm !== filtroDia) pasaFiltro = false; }
-                    else if (filtroMes) { if (!fechaNorm || !fechaNorm.startsWith(filtroMes)) pasaFiltro = false; }
-                    if (pasaFiltro) totalGastos += Number(g.Monto || g.MONTO || g.monto || 0) || 0;
+                    
+                    if (filtroDia) {
+                        if (fechaNorm !== filtroDia) pasaFiltro = false;
+                    } else if (filtroMes) {
+                        if (!fechaNorm || !fechaNorm.startsWith(filtroMes)) pasaFiltro = false;
+                    }
+
+                    if (pasaFiltro) {
+                        totalGastos += Number(g.Monto || g.MONTO || g.monto || 0) || 0;
+                    }
                 });
+                
+                console.log("💸 Total Gastos calculado:", totalGastos);
+
                 document.getElementById('balance-ventas').textContent = totalVentas.toLocaleString() + " Gs.";
                 document.getElementById('balance-gastos').textContent = totalGastos.toLocaleString() + " Gs.";
                 let neto = totalVentas - totalGastos;
                 let elNeto = document.getElementById('balance-neto');
                 elNeto.textContent = neto.toLocaleString() + " Gs.";
                 elNeto.className = neto >= 0 ? "h4 fw-bold text-success" : "h4 fw-bold text-danger";
-            } catch (e) { console.error("ERROR en calcularBalance:", e); }
+            } catch (e) { 
+                console.error("ERROR en calcularBalance:", e); 
+            }
         }
 
         function inicializarBalance() { calcularBalance(); }
@@ -964,19 +1028,17 @@
                     body: JSON.stringify({ action: "registrarGasto", fecha: new Date().toLocaleDateString(), descripcion: desc, monto: Number(monto) })
                 });
                 const resultado = await res.json();
-                if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo guardar")); return; }
+                if (resultado.status !== "success") { alert(" " + (resultado.mensaje || "No se pudo guardar")); return; }
                 alert("✅ Gasto registrado exitosamente");
                 document.getElementById("gasto-desc").value = "";
                 document.getElementById("gasto-monto").value = "";
                 calcularBalance();
-            } catch (e) { console.error(e); alert(" Error al guardar gasto.\n\n" + e.message); }
+            } catch (e) { console.error(e); alert("❌ Error al guardar gasto.\n\n" + e.message); }
         }
 
-        // ✅ FUNCIÓN OPTIMIZADA: "Ver Pedidos" con caché (INSTANTÁNEO)
         async function buscarPedidosParaCancelar(forzarRecarga = false) {
             let criterio = document.getElementById('criterio-cancelar').value.toLowerCase().trim();
             
-            // ✅ Usar caché si está disponible y no se fuerza recarga
             let ventas;
             const ahora = Date.now();
             const cacheValido = ventasCache.length > 0 && ultimaActualizacionCache && (ahora - ultimaActualizacionCache < TIEMPO_CACHE_MS);
@@ -989,7 +1051,6 @@
                 try {
                     let res = await fetch(API_URL + "?action=getVentas");
                     ventas = await res.json();
-                    // ✅ Actualizar caché
                     ventasCache = ventas;
                     ultimaActualizacionCache = ahora;
                 } catch (e) {
@@ -999,17 +1060,14 @@
                 }
             }
             
-            // ✅ Actualizar timestamp
             const horaActual = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
             const elUltimaAct = document.getElementById('ultima-act-cancelar');
             if (elUltimaAct) {
                 elUltimaAct.textContent = horaActual;
             }
             
-            // ✅ FILTRO ESTRICTO: Excluir cancelados, archivados y realizados
             let pedidosActivos = ventas.filter(v => {
                 let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
-                // Excluir explícitamente estos estados
                 return estado !== "cancelado" && 
                        estado !== "archivado" && 
                        estado !== "realizado" &&
@@ -1018,7 +1076,6 @@
                        estado !== "complete";
             }).slice(-20).reverse();
             
-            // Aplicar filtro de búsqueda si hay criterio
             if (criterio) {
                 pedidosActivos = pedidosActivos.filter(v => {
                     let idOrden = String(v.ID_Orden || v.idOrden || "").toLowerCase();
@@ -1089,7 +1146,7 @@
                 }
 
                 if (resultado.status !== "success") { 
-                    alert("❌ NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido.")); 
+                    alert(" NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido.")); 
                     return; 
                 }
 
@@ -1104,7 +1161,6 @@
 
                 document.getElementById("criterio-cancelar").value = "";
                 
-                // ✅ Invalidar caché después de cancelar
                 ventasCache = [];
                 ultimaActualizacionCache = null;
                 
@@ -1115,7 +1171,7 @@
 
             } catch (error) {
                 console.error("❌ ERROR REAL AL CANCELAR:", error);
-                alert("❌ NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nDetalle: " + error.message);
+                alert(" NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nDetalle: " + error.message);
                 
                 try {
                     const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos"));
