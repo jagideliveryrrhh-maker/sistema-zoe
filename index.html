@@ -693,7 +693,7 @@
         async function archivarPedido(ordenId) {
             if (!confirm(`¿Archivar pedido #${ordenId}?\n\nDesaparecerá de la vista de cocina.`)) return;
             try {
-                console.log("🗑️ Archivando pedido:", ordenId);
+                console.log("️ Archivando pedido:", ordenId);
                 const res = await fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -712,7 +712,7 @@
                 await cargarPedidosCocina();
                 alert("✅ Pedido archivado correctamente");
             } catch (e) { 
-                console.error(" Error al archivar:", e); 
+                console.error("❌ Error al archivar:", e); 
                 alert("❌ Error de conexión al archivar.\n\n" + e.message); 
             }
         }
@@ -807,7 +807,7 @@
             let nombre = document.getElementById('img-prod-nombre').value;
             let url = document.getElementById('img-prod-url').value.trim();
             let imagenAGuardar = imagenBase64 || url;
-            if (!imagenAGuardar) { alert("⚠️ Debes seleccionar una imagen o pegar una URL válida."); return; }
+            if (!imagenAGuardar) { alert("️ Debes seleccionar una imagen o pegar una URL válida."); return; }
             if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("️ La imagen es muy grande. Usa una más pequeña o súbela a imgur.com"); return; }
             try {
                 const res = await fetch(API_URL, {
@@ -878,20 +878,26 @@
 
         // ✅ FUNCIÓN CORREGIDA: Convierte números seriales de Google Sheets a fechas
         function serialGoogleSheetsAFecha(serial) {
-            // Los números seriales de Google Sheets cuentan días desde el 30/12/1899
             const epoch = new Date(1899, 11, 30);
             const fecha = new Date(epoch.getTime() + serial * 86400000);
             return fecha;
         }
 
-        // ✅ FUNCIÓN CORREGIDA: Normaliza fechas de múltiples formatos
+        // ✅ FUNCIÓN CORREGIDA: Maneja múltiples formatos incluyendo objetos Date
         function normalizarFecha(fechaStr) {
             if (!fechaStr && fechaStr !== 0) return null;
             
-            // Si es un número (serial de Google Sheets)
+            // ✅ Si es un objeto Date de JavaScript
+            if (fechaStr instanceof Date) {
+                const anio = fechaStr.getFullYear();
+                const mes = String(fechaStr.getMonth() + 1).padStart(2, '0');
+                const dia = String(fechaStr.getDate()).padStart(2, '0');
+                return `${anio}-${mes}-${dia}`;
+            }
+            
+            // ✅ Si es un número (serial de Google Sheets)
             if (typeof fechaStr === 'number' || (!isNaN(parseFloat(fechaStr)) && isFinite(fechaStr))) {
                 const serial = parseFloat(fechaStr);
-                // Si es mayor a 1000, probablemente es un serial de Google Sheets
                 if (serial > 1000) {
                     const fecha = serialGoogleSheetsAFecha(serial);
                     const anio = fecha.getFullYear();
@@ -902,6 +908,23 @@
             }
             
             let s = String(fechaStr).trim();
+            
+            // ✅ Si contiene "GMT" o es un string de fecha larga de JavaScript
+            if (s.includes('GMT') || s.includes('Jan') || s.includes('Feb') || s.includes('Mar') || 
+                s.includes('Apr') || s.includes('May') || s.includes('Jun') || s.includes('Jul') || 
+                s.includes('Aug') || s.includes('Sep') || s.includes('Oct') || s.includes('Nov') || s.includes('Dec')) {
+                try {
+                    const fecha = new Date(s);
+                    if (!isNaN(fecha.getTime())) {
+                        const anio = fecha.getFullYear();
+                        const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+                        const dia = String(fecha.getDate()).padStart(2, '0');
+                        return `${anio}-${mes}-${dia}`;
+                    }
+                } catch (e) {
+                    console.error("Error parseando fecha:", s, e);
+                }
+            }
             
             // Si contiene 'T', es formato ISO
             if (s.includes('T')) {
@@ -948,7 +971,7 @@
                 let ventas = await resV.json();
                 let totalVentas = 0;
                 
-                console.log("📊 Total de ventas recibidas:", ventas.length);
+                console.log(" Total de ventas recibidas:", ventas.length);
                 
                 ventas.forEach(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
@@ -961,10 +984,8 @@
                         let pasaFiltro = true;
                         
                         if (filtroDia) {
-                            // filtroDia viene en formato YYYY-MM-DD
                             if (fechaNorm !== filtroDia) pasaFiltro = false;
                         } else if (filtroMes) {
-                            // filtroMes viene en formato YYYY-MM
                             if (!fechaNorm || !fechaNorm.startsWith(filtroMes)) pasaFiltro = false;
                         }
 
@@ -981,7 +1002,7 @@
                 let gastos = await resG.json();
                 let totalGastos = 0;
                 
-                console.log("📊 Total de gastos recibidos:", gastos.length);
+                console.log(" Total de gastos recibidos:", gastos.length);
                 
                 gastos.forEach(g => {
                     let fechaOriginal = g.Fecha || g.FECHA || g.fecha || "";
@@ -1028,12 +1049,12 @@
                     body: JSON.stringify({ action: "registrarGasto", fecha: new Date().toLocaleDateString(), descripcion: desc, monto: Number(monto) })
                 });
                 const resultado = await res.json();
-                if (resultado.status !== "success") { alert(" " + (resultado.mensaje || "No se pudo guardar")); return; }
+                if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo guardar")); return; }
                 alert("✅ Gasto registrado exitosamente");
                 document.getElementById("gasto-desc").value = "";
                 document.getElementById("gasto-monto").value = "";
                 calcularBalance();
-            } catch (e) { console.error(e); alert("❌ Error al guardar gasto.\n\n" + e.message); }
+            } catch (e) { console.error(e); alert(" Error al guardar gasto.\n\n" + e.message); }
         }
 
         async function buscarPedidosParaCancelar(forzarRecarga = false) {
@@ -1146,7 +1167,7 @@
                 }
 
                 if (resultado.status !== "success") { 
-                    alert(" NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido.")); 
+                    alert("❌ NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido.")); 
                     return; 
                 }
 
@@ -1171,7 +1192,7 @@
 
             } catch (error) {
                 console.error("❌ ERROR REAL AL CANCELAR:", error);
-                alert(" NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nDetalle: " + error.message);
+                alert("❌ NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nDetalle: " + error.message);
                 
                 try {
                     const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos"));
