@@ -129,7 +129,16 @@
                                     </div>
                                     <hr>
                                     <h4 class="text-end">Total: <span id="carrito-total" class="text-danger">0 Gs.</span></h4>
-                                    <button class="btn btn-success w-100 mb-2 btn-lg" onclick="cobrarEImprimir()"><i class="fa-solid fa-print"></i> Cobrar e Imprimir</button>
+                                    <div class="border rounded p-2 mb-2 bg-light">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="fw-bold"><i class="fa-brands fa-bluetooth text-primary"></i> Impresora</span>
+        <span id="estado-impresora" class="badge bg-secondary">Desconectada</span>
+    </div>
+    <button class="btn btn-primary w-100 mb-2" onclick="conectarImpresoraYHK()">
+        <i class="fa-brands fa-bluetooth me-1"></i> Conectar YHK-310C
+    </button>
+</div>
+<button class="btn btn-success w-100 mb-2 btn-lg" onclick="cobrarEImprimir()"><i class="fa-solid fa-print"></i> Cobrar e Imprimir</button>
                                     <button class="btn btn-warning w-100" onclick="abrirModalCena()"><i class="fa-solid fa-utensils"></i> Agregar Cena Personal</button>
                                     <hr class="my-3">
                                     <div class="input-group">
@@ -450,84 +459,385 @@
             renderizarCarrito();
         }
 
+        // ==========================================================
+        // IMPRESORA YHK-310C — Web Bluetooth + ESC/POS raster
+        // Compatible con impresoras YHK BLE tipo ISSC UART.
+        // ==========================================================
+
+        const YHK_SERVICE_UUID = "49535343-fe7d-4ae5-8fa9-9fafd205e455";
+        const YHK_TX_UUID = "49535343-8841-43f4-a8d4-ecbe34729bb3";
+        const YHK_RX_UUID = "49535343-1e4d-4bd9-ba61-23c647249616";
+
+        const YHK_WIDTH = 384;
+        const YHK_CHUNK_SIZE = 182;
+        const YHK_CHUNK_DELAY = 40;
+        const YHK_FLUSH_DELAY = 1500;
+
+        let yhkDevice = null;
+        let yhkCharacteristic = null;
+        let yhkConectando = false;
+
+        function actualizarEstadoImpresora(texto, clase) {
+            const el = document.getElementById("estado-impresora");
+            if (!el) return;
+            el.textContent = texto;
+            el.className = "badge " + (clase || "bg-secondary");
+        }
+
+        function comprobarBluetoothWeb() {
+            if (!("bluetooth" in navigator)) {
+                alert(
+                    "❌ Este navegador no permite Web Bluetooth.\n\n" +
+                    "Usá Google Chrome en Android y abrí el sistema desde HTTPS."
+                );
+                return false;
+            }
+            if (!window.isSecureContext) {
+                alert(
+                    "❌ La conexión Bluetooth requiere HTTPS.\n\n" +
+                    "Abrí ZOE FAT FOOD desde la dirección https://sistema-zoe-nyem.vercel.app/"
+                );
+                return false;
+            }
+            return true;
+        }
+
+        async function conectarImpresoraYHK() {
+            if (yhkConectando) return;
+            if (!comprobarBluetoothWeb()) return;
+
+            try {
+                yhkConectando = true;
+                actualizarEstadoImpresora("Buscando...", "bg-warning text-dark");
+
+                // La impresora YHK normalmente aparece como YHK-...
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ namePrefix: "YHK" }],
+                    optionalServices: [YHK_SERVICE_UUID]
+                });
+
+                yhkDevice = device;
+
+                if (!yhkDevice.gatt) {
+                    throw new Error("El dispositivo no ofrece GATT/Bluetooth Low Energy.");
+                }
+
+                actualizarEstadoImpresora("Conectando...", "bg-warning text-dark");
+
+                const server = await yhkDevice.gatt.connect();
+                const service = await server.getPrimaryService(YHK_SERVICE_UUID);
+                yhkCharacteristic = await service.getCharacteristic(YHK_TX_UUID);
+
+                // Algunas YHK tienen RX/notificaciones; no es obligatorio para imprimir.
+                try {
+                    const rx = await service.getCharacteristic(YHK_RX_UUID);
+                    await rx.startNotifications();
+                } catch (e) {
+                    console.log("RX no disponible; se continúa solo con TX.");
+                }
+
+                yhkDevice.addEventListener("gattserverdisconnected", () => {
+                    yhkCharacteristic = null;
+                    actualizarEstadoImpresora("Desconectada", "bg-secondary");
+                });
+
+                actualizarEstadoImpresora("Conectada ✓", "bg-success");
+                alert("✅ YHK-310C conectada correctamente.");
+            } catch (error) {
+                console.error("❌ Error conectando YHK:", error);
+                yhkCharacteristic = null;
+
+                if (error && error.name === "NotFoundError") {
+                    actualizarEstadoImpresora("No seleccionada", "bg-secondary");
+                    alert(
+                        "No se seleccionó ninguna impresora.\n\n" +
+                        "Encendé la YHK-310C y asegurate de que no esté siendo usada por otra aplicación."
+                    );
+                } else {
+                    actualizarEstadoImpresora("Error", "bg-danger");
+                    alert(
+                        "❌ No se pudo conectar con la YHK-310C.\n\n" +
+                        "Detalle: " + (error.message || error)
+                    );
+                }
+            } finally {
+                yhkConectando = false;
+            }
+        }
+
+        function sleepYHK(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function enviarYHK(bytes) {
+            if (!yhkCharacteristic) {
+                throw new Error("La YHK-310C no está conectada.");
+            }
+
+            for (let i = 0; i < bytes.length; i += YHK_CHUNK_SIZE) {
+                const chunk = bytes.slice(i, i + YHK_CHUNK_SIZE);
+
+                if (yhkCharacteristic.writeValueWithoutResponse) {
+                    await yhkCharacteristic.writeValueWithoutResponse(chunk);
+                } else {
+                    await yhkCharacteristic.writeValue(chunk);
+                }
+
+                await sleepYHK(YHK_CHUNK_DELAY);
+            }
+
+            await sleepYHK(YHK_FLUSH_DELAY);
+        }
+
+        function crearCanvasTicket(cliente, ordenId, ahora, carrito, total) {
+            const canvas = document.createElement("canvas");
+            canvas.width = YHK_WIDTH;
+
+            // Altura inicial; luego se recorta al contenido real.
+            canvas.height = 1600;
+
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#000000";
+            ctx.textBaseline = "top";
+
+            const margin = 8;
+            const maxWidth = YHK_WIDTH - margin * 2;
+            let y = 8;
+
+            function texto(texto, opciones = {}) {
+                const size = opciones.size || 22;
+                const bold = opciones.bold ? "bold " : "";
+                const align = opciones.align || "left";
+                const lineHeight = opciones.lineHeight || Math.round(size * 1.25);
+
+                ctx.font = `${bold}${size}px "Courier New", monospace`;
+                ctx.textAlign = align;
+
+                const x = align === "center" ? YHK_WIDTH / 2 :
+                          align === "right" ? YHK_WIDTH - margin : margin;
+
+                const palabras = String(texto).split(/\s+/);
+                let linea = "";
+
+                for (const palabra of palabras) {
+                    const prueba = linea ? linea + " " + palabra : palabra;
+                    if (ctx.measureText(prueba).width > maxWidth && linea) {
+                        ctx.fillText(linea, x, y);
+                        y += lineHeight;
+                        linea = palabra;
+                    } else {
+                        linea = prueba;
+                    }
+                }
+
+                if (linea) {
+                    ctx.fillText(linea, x, y);
+                    y += lineHeight;
+                }
+
+                return y;
+            }
+
+            function linea() {
+                ctx.font = `20px "Courier New", monospace`;
+                ctx.textAlign = "left";
+                ctx.fillText("--------------------------------", margin, y);
+                y += 26;
+            }
+
+            function item(nombre, cantidad, subtotal) {
+                ctx.font = `20px "Courier New", monospace`;
+                ctx.textAlign = "left";
+
+                const cantidadTexto = `${cantidad}x `;
+                const precioTexto = `${subtotal.toLocaleString()} Gs.`;
+
+                const precioW = ctx.measureText(precioTexto).width;
+                const cantidadW = ctx.measureText(cantidadTexto).width;
+
+                // Si el nombre es largo, primero imprimimos las líneas del nombre
+                // y dejamos el precio en la última línea.
+                const espacioNombre = maxWidth - precioW - cantidadW - 4;
+                const palabras = String(nombre).split(/\s+/);
+                let lineaNombre = cantidadTexto;
+
+                for (const palabra of palabras) {
+                    const prueba = lineaNombre + palabra + " ";
+                    if (ctx.measureText(prueba).width > espacioNombre && lineaNombre !== cantidadTexto) {
+                        ctx.fillText(lineaNombre.trim(), margin, y);
+                        y += 25;
+                        lineaNombre = "   " + palabra + " ";
+                    } else {
+                        lineaNombre = prueba;
+                    }
+                }
+
+                ctx.fillText(lineaNombre.trim(), margin, y);
+                ctx.textAlign = "right";
+                ctx.fillText(precioTexto, YHK_WIDTH - margin, y);
+                y += 27;
+            }
+
+            texto("ZOE FAT FOOD", { size: 28, bold: true, align: "center", lineHeight: 34 });
+            linea();
+            texto(`Orden: #${ordenId}`, { size: 20 });
+            texto(`Fecha: ${ahora.toLocaleDateString()}`, { size: 20 });
+            texto(`Hora: ${ahora.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`, { size: 20 });
+            texto(`Cliente: ${cliente}`, { size: 20 });
+            linea();
+
+            carrito.forEach(i => {
+                item(i.nombre, i.cantidad, i.precio * i.cantidad);
+            });
+
+            linea();
+            texto(`TOTAL: ${total.toLocaleString()} Gs.`, {
+                size: 25,
+                bold: true,
+                align: "center",
+                lineHeight: 32
+            });
+            linea();
+            texto("¡Gracias por su compra!", {
+                size: 20,
+                align: "center",
+                lineHeight: 28
+            });
+
+            y += 20;
+
+            // Recortar el canvas al contenido.
+            const salida = document.createElement("canvas");
+            salida.width = YHK_WIDTH;
+            salida.height = Math.max(1, y);
+            const salidaCtx = salida.getContext("2d", { willReadFrequently: true });
+            salidaCtx.fillStyle = "#ffffff";
+            salidaCtx.fillRect(0, 0, salida.width, salida.height);
+            salidaCtx.drawImage(canvas, 0, 0);
+
+            return salida;
+        }
+
+        function canvasAESCPos(canvas) {
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            const widthBytes = Math.ceil(canvas.width / 8);
+            const height = canvas.height;
+
+            // ESC @
+            const datos = [0x1B, 0x40];
+
+            // GS v 0 — raster bit image
+            datos.push(
+                0x1D, 0x76, 0x30, 0x00,
+                widthBytes & 0xFF,
+                (widthBytes >> 8) & 0xFF,
+                height & 0xFF,
+                (height >> 8) & 0xFF
+            );
+
+            for (let y = 0; y < height; y++) {
+                for (let xb = 0; xb < widthBytes; xb++) {
+                    let byte = 0;
+
+                    for (let bit = 0; bit < 8; bit++) {
+                        const x = xb * 8 + bit;
+                        if (x >= canvas.width) continue;
+
+                        const pos = (y * canvas.width + x) * 4;
+                        const r = img.data[pos];
+                        const g = img.data[pos + 1];
+                        const b = img.data[pos + 2];
+
+                        const negro = ((r + g + b) / 3) < 128;
+                        if (negro) byte |= (1 << (7 - bit));
+                    }
+
+                    datos.push(byte);
+                }
+            }
+
+            // Alimentar papel.
+            datos.push(0x1B, 0x64, 0x04);
+
+            return new Uint8Array(datos);
+        }
+
+        async function imprimirTicketYHK(cliente, ordenId, ahora, carrito, total) {
+            if (!yhkCharacteristic) {
+                throw new Error("La YHK-310C no está conectada. Primero presioná 'Conectar YHK-310C'.");
+            }
+
+            const canvas = crearCanvasTicket(cliente, ordenId, ahora, carrito, total);
+            const bytes = canvasAESCPos(canvas);
+
+            actualizarEstadoImpresora("Imprimiendo...", "bg-info");
+            await enviarYHK(bytes);
+            actualizarEstadoImpresora("Conectada ✓", "bg-success");
+        }
+
         async function cobrarEImprimir() {
-            if (carrito.length === 0) { alert("El carrito está vacío."); return; }
+            if (carrito.length === 0) {
+                alert("El carrito está vacío.");
+                return;
+            }
+
+            if (!yhkCharacteristic) {
+                alert(
+                    "🖨️ La impresora no está conectada.\n\n" +
+                    "Primero presioná 'Conectar YHK-310C'."
+                );
+                return;
+            }
 
             let cliente = document.getElementById("cliente-nombre").value.trim() || "Mostrador";
             let total = carrito.reduce((acc, i) => acc + (i.precio * i.cantidad), 0);
             let ordenId = Math.floor(100000 + Math.random() * 900000);
             let ahora = new Date();
-            let productosStr = carrito.map(function(i) { return i.cantidad + "x " + i.nombre; }).join(", ");
+            let productosStr = carrito.map(function(i) {
+                return i.cantidad + "x " + i.nombre;
+            }).join(", ");
 
             try {
-                fetch(API_URL, {
+                // Primero guardamos la venta en Google Sheets.
+                const respuestaVenta = await fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
                     body: JSON.stringify({
-                        action: "registrarVenta", idOrden: ordenId, fecha: ahora.toLocaleDateString(),
-                        cliente: cliente, hora: ahora.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                        productos: productosStr, total: total + " Gs.", estado: "Pendiente"
+                        action: "registrarVenta",
+                        idOrden: ordenId,
+                        fecha: ahora.toLocaleDateString(),
+                        cliente: cliente,
+                        hora: ahora.toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit"
+                        }),
+                        productos: productosStr,
+                        total: total + " Gs.",
+                        estado: "Pendiente"
                     })
-                }).then(res => res.text())
-                  .then(texto => {
-                      try {
-                          let resultado = JSON.parse(texto);
-                          if (resultado.status === "success") {
-                              console.log("✅ Venta registrada:", ordenId);
-                              ventasCache = [];
-                              ultimaActualizacionCache = null;
-                          }
-                      } catch (e) { console.error("Error parseando respuesta:", e); }
-                  })
-                  .catch(err => console.error("❌ Error al registrar venta:", err));
+                });
 
-                let itemsHTML = carrito.map(i => 
-                    `<div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px;">
-                        <span>${i.cantidad}x ${i.nombre}</span>
-                        <span>${(i.precio * i.cantidad).toLocaleString()} Gs.</span>
-                    </div>`
-                ).join('');
+                const textoVenta = await respuestaVenta.text();
 
-                let ticketHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Ticket #${ordenId}</title>
-                <style>
-                    @page { size: 58mm auto; margin: 0; }
-                    * { margin: 0; padding: 0; box-sizing: border-box; }
-                    body { font-family: 'Courier New', monospace; font-size: 11px; width: 58mm; padding: 3mm; color: #000; }
-                    .centro { text-align: center; } .negrita { font-weight: bold; } .grande { font-size: 14px; font-weight: bold; }
-                    .linea { border-bottom: 1px dashed #000; margin: 5px 0; }
-                    .item { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 11px; }
-                    .total { font-size: 13px; font-weight: bold; margin-top: 5px; }
-                </style></head><body>
-                    <div class="centro grande">ZOE FAT FOOD</div>
-                    <div class="linea"></div>
-                    <div><strong>Orden:</strong> #${ordenId}</div>
-                    <div><strong>Fecha:</strong> ${ahora.toLocaleDateString()}</div>
-                    <div><strong>Hora:</strong> ${ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-                    <div><strong>Cliente:</strong> ${cliente}</div>
-                    <div class="linea"></div>
-                    ${itemsHTML}
-                    <div class="linea"></div>
-                    <div class="item total"><span>TOTAL</span><span>${total.toLocaleString()} Gs.</span></div>
-                    <div class="linea"></div>
-                    <div class="centro" style="font-size: 10px; margin-top: 10px;">¡Gracias por su compra!</div>
-                    <script>
-                        window.onload = function() { 
-                            setTimeout(() => { 
-                                window.print(); 
-                                setTimeout(() => window.close(), 1000); 
-                            }, 200); 
-                        };
-                    <\/script>
-                </body></html>`;
-
-                let ventanaImpresion = window.open('', '_blank', 'width=300,height=600');
-                if (ventanaImpresion) {
-                    ventanaImpresion.document.write(ticketHTML);
-                    ventanaImpresion.document.close();
-                } else {
-                    alert("⚠️ Por favor permite las ventanas emergentes para imprimir el ticket.");
-                    return;
+                try {
+                    const resultadoVenta = JSON.parse(textoVenta);
+                    if (resultadoVenta.status === "success") {
+                        console.log("✅ Venta registrada:", ordenId);
+                        ventasCache = [];
+                        ultimaActualizacionCache = null;
+                    } else {
+                        console.warn("⚠️ Respuesta inesperada al registrar venta:", resultadoVenta);
+                    }
+                } catch (e) {
+                    console.warn("⚠️ No se pudo interpretar la respuesta de Google Sheets:", textoVenta);
                 }
+
+                // Imprimir directamente en la YHK-310C, sin window.print().
+                await imprimirTicketYHK(cliente, ordenId, ahora, carrito, total);
 
                 carrito = [];
                 document.getElementById("cliente-nombre").value = "";
@@ -541,9 +851,16 @@
                     }
                 }, 500);
 
+                alert("✅ Venta registrada e impresa correctamente.\n\nOrden #" + ordenId);
+
             } catch (error) {
-                console.error("❌ ERROR REGISTRANDO VENTA:", error);
-                alert("❌ NO SE PUDO GUARDAR LA VENTA\n\nDetalle: " + error.message);
+                console.error("❌ ERROR REGISTRANDO/IMPRIMIENDO:", error);
+
+                // La venta puede haber quedado registrada aunque la impresión falle.
+                alert(
+                    "⚠️ La venta puede haber sido registrada, pero la impresión falló.\n\n" +
+                    "Detalle: " + error.message
+                );
             }
         }
 
