@@ -175,11 +175,11 @@
                 <div class="tab-pane fade" id="tab-stock">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h4>Inventario</h4>
-                        <button class="btn btn-danger btn-sm" onclick="cargarStock()"><i class="fa-solid fa-rotate"></i> Actualizar</button>
-                    </div>
-                    <div class="alert alert-info d-flex justify-content-between align-items-center">
-                        <span><i class="fa-solid fa-info-circle"></i> El stock de hamburguesas se calcula automáticamente según el stock de medallones.</span>
-                        <button class="btn btn-primary btn-sm" onclick="actualizarStockHamburguesas()"><i class="fa-solid fa-calculator"></i> Sincronizar Stock</button>
+                        <div>
+                            <button class="btn btn-success btn-sm me-2" onclick="abrirModalNuevoProducto()"><i class="fa-solid fa-plus"></i> Agregar Producto</button>
+                            <button class="btn btn-primary btn-sm me-2" onclick="actualizarStockHamburguesas()"><i class="fa-solid fa-calculator"></i> Sincronizar Hamburguesas</button>
+                            <button class="btn btn-danger btn-sm" onclick="cargarStock()"><i class="fa-solid fa-rotate"></i> Actualizar</button>
+                        </div>
                     </div>
                     <div class="table-responsive bg-white p-2 shadow-sm rounded">
                         <table class="table table-sm table-striped align-middle">
@@ -251,6 +251,52 @@
         <div class="ticket-item ticket-negrita" style="font-size: 13px;"><span>TOTAL</span><span id="t-total"></span></div>
         <div class="ticket-linea"></div>
         <div class="ticket-centro" style="font-size: 10px;">¡Gracias por su compra!</div>
+    </div>
+
+    <!-- Modal Nuevo Producto -->
+    <div class="modal fade" id="modalNuevoProducto" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-plus-circle"></i> Agregar Nuevo Producto</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Nombre del Producto *</label>
+                        <input type="text" id="nuevo-prod-nombre" class="form-control" placeholder="Ej: Hamburguesa Simple">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Categoría *</label>
+                        <select id="nuevo-prod-categoria" class="form-select">
+                            <option value="Preparado">Preparado</option>
+                            <option value="Ingrediente">Ingrediente</option>
+                            <option value="Bebida">Bebida</option>
+                            <option value="Postre">Postre</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Precio (Gs.) *</label>
+                        <input type="number" id="nuevo-prod-precio" class="form-control" placeholder="Ej: 10000" min="0">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Stock Inicial *</label>
+                        <input type="number" id="nuevo-prod-stock-inicial" class="form-control" placeholder="Ej: 50" min="0">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Stock Mínimo</label>
+                        <input type="number" id="nuevo-prod-stock-minimo" class="form-control" placeholder="Ej: 10" min="0" value="10">
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="fa-solid fa-info-circle"></i> Los campos marcados con * son obligatorios.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success" onclick="guardarNuevoProducto()"><i class="fa-solid fa-save"></i> Guardar Producto</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="modal fade" id="modalCena" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
@@ -512,6 +558,66 @@
             renderizarCarrito();
         }
 
+        // ✅ NUEVA FUNCIÓN: Abrir modal para agregar producto
+        function abrirModalNuevoProducto() {
+            document.getElementById('nuevo-prod-nombre').value = "";
+            document.getElementById('nuevo-prod-categoria').value = "Preparado";
+            document.getElementById('nuevo-prod-precio').value = "";
+            document.getElementById('nuevo-prod-stock-inicial').value = "";
+            document.getElementById('nuevo-prod-stock-minimo').value = "10";
+            new bootstrap.Modal(document.getElementById('modalNuevoProducto'), { backdrop: true, keyboard: true }).show();
+        }
+
+        // ✅ NUEVA FUNCIÓN: Guardar nuevo producto
+        async function guardarNuevoProducto() {
+            let nombre = document.getElementById('nuevo-prod-nombre').value.trim();
+            let categoria = document.getElementById('nuevo-prod-categoria').value;
+            let precio = Number(document.getElementById('nuevo-prod-precio').value);
+            let stockInicial = Number(document.getElementById('nuevo-prod-stock-inicial').value);
+            let stockMinimo = Number(document.getElementById('nuevo-prod-stock-minimo').value);
+
+            if (!nombre) { alert("️ El nombre del producto es obligatorio."); return; }
+            if (isNaN(precio) || precio < 0) { alert("⚠️ Ingresa un precio válido."); return; }
+            if (isNaN(stockInicial) || stockInicial < 0) { alert("⚠️ Ingresa un stock inicial válido."); return; }
+            if (isNaN(stockMinimo) || stockMinimo < 0) { stockMinimo = 10; }
+
+            try {
+                const res = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify({
+                        action: "agregarProducto",
+                        nombre: nombre,
+                        categoria: categoria,
+                        precio: precio,
+                        stockInicial: stockInicial,
+                        stockActual: stockInicial,
+                        stockMinimo: stockMinimo
+                    })
+                });
+
+                const texto = await res.text();
+                let resultado;
+                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error en la respuesta del servidor"); return; }
+
+                if (resultado.status === "success") {
+                    bootstrap.Modal.getInstance(document.getElementById('modalNuevoProducto')).hide();
+                    alert("✅ Producto agregado correctamente:\n\n" + nombre + "\nStock: " + stockInicial);
+                    
+                    // Limpiar caché y recargar
+                    productosCache = [];
+                    productosCacheTime = 0;
+                    await cargarProductosCaja();
+                    await cargarStock();
+                } else {
+                    alert("❌ Error: " + (resultado.mensaje || "No se pudo agregar el producto"));
+                }
+            } catch (e) {
+                console.error("❌ Error al agregar producto:", e);
+                alert("❌ Error de conexión al agregar el producto.\n\n" + e.message);
+            }
+        }
+
         async function cobrarEImprimir() {
             if (carrito.length === 0) { alert("El carrito está vacío."); return; }
             let cliente = document.getElementById("cliente-nombre").value.trim() || "Mostrador";
@@ -600,26 +706,20 @@
                 ventasCache = ventas;
                 ultimaActualizacionCache = Date.now();
                 let html = "";
-                
-                // ✅ CORRECCIÓN: Pedidos del más antiguo al más nuevo (sin reverse)
                 let pedidosVisibles = ventas.slice(-30).filter(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
                     return estado === "pendiente" || estado === "cancelado";
                 });
-                
                 const contador = document.getElementById('contador-pedidos');
                 if (contador) {
                     const pendientes = pedidosVisibles.filter(v => String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase() === "pendiente").length;
                     contador.textContent = pendientes + ' pendiente' + (pendientes !== 1 ? 's' : '');
                     contador.className = pendientes > 0 ? 'badge bg-warning text-dark me-2' : 'badge bg-success me-2';
                 }
-                
                 if (pedidosVisibles.length === 0) {
                     document.getElementById('kds-pedidos').innerHTML = '<div class="text-center text-muted py-5" style="grid-column: 1/-1;"><h5><i class="fa-solid fa-check-circle text-success"></i> No hay pedidos pendientes</h5></div>';
                     return;
                 }
-                
-                // ✅ Ordenar: pendientes primero, luego cancelados (manteniendo orden cronológico)
                 pedidosVisibles.sort((a, b) => {
                     const estadoA = String(a.Estado || a.ESTADO || a.estado || "").trim().toLowerCase();
                     const estadoB = String(b.Estado || b.ESTADO || b.estado || "").trim().toLowerCase();
@@ -627,7 +727,6 @@
                     if (estadoA !== 'pendiente' && estadoB === 'pendiente') return 1;
                     return 0;
                 });
-                
                 pedidosVisibles.forEach(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
                     let claseCard = estado === "cancelado" ? "cancelado" : (estado === "pendiente" ? "pendiente" : "");
