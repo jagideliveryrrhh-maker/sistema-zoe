@@ -360,6 +360,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // ✅ TU URL EXACTA
         const API_URL = "https://script.google.com/macros/s/AKfycbzd0p4S7v_cl-i8p_m_Hdnbthr-vw0kMasUdBtPU_OA1gz6FmuNGYRGp7uVxfJqYxld/exec";
         const SESION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
         const INTERVALO_COCINA_MS = 5000;
@@ -387,10 +388,13 @@
         async function cargarUsuarios() {
             try {
                 const res = await fetch(API_URL + "?action=getUsuarios");
+                if (!res.ok) throw new Error("Error de red");
                 usuarios = await res.json();
                 document.getElementById('cargando-usuarios').classList.add('d-none');
                 document.getElementById('btn-ingresar').disabled = false;
-            } catch (e) { document.getElementById('cargando-usuarios').innerHTML = '<span class="text-danger">Error de conexión.</span>'; }
+            } catch (e) { 
+                document.getElementById('cargando-usuarios').innerHTML = '<span class="text-danger">Error de conexión. Verifica la URL del Apps Script.</span>'; 
+            }
         }
 
         function iniciarSesion() {
@@ -460,7 +464,10 @@
                 try {
                     const res = await fetch(url);
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    return await res.json();
+                    const text = await res.text();
+                    // Verificar que la respuesta sea JSON válido y no HTML de error
+                    if (text.trim().startsWith('<')) throw new Error("El servidor devolvió HTML en lugar de JSON. Verifica los permisos del Apps Script.");
+                    return JSON.parse(text);
                 } catch (e) {
                     if (i === maxIntentos - 1) throw e;
                     await new Promise(r => setTimeout(r, 1000 * (i + 1)));
@@ -481,7 +488,8 @@
                 productosCacheTime = ahora;
                 renderizarProductosCaja(listaProductos);
             } catch (e) { 
-                document.getElementById('productos-grid').innerHTML = `<div class="text-center text-danger py-4"><i class="fa-solid fa-triangle-exclamation fa-3x mb-3"></i><p>Error cargando productos</p><button class="btn btn-sm btn-danger" onclick="cargarProductosCaja()"><i class="fa-solid fa-rotate"></i> Reintentar</button></div>`; 
+                console.error("Error cargando productos:", e);
+                document.getElementById('productos-grid').innerHTML = `<div class="text-center text-danger py-4"><i class="fa-solid fa-triangle-exclamation fa-3x mb-3"></i><p>${e.message}</p><button class="btn btn-sm btn-danger" onclick="cargarProductosCaja()"><i class="fa-solid fa-rotate"></i> Reintentar</button></div>`; 
             }
         }
 
@@ -568,14 +576,16 @@
             if (isNaN(stockMinimo) || stockMinimo < 0) { stockMinimo = 10; }
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "agregarProducto", nombre: nombre, categoria: categoria, precio: precio, stockInicial: stockInicial, stockActual: stockInicial, stockMinimo: stockMinimo }) });
-                const resultado = await res.json();
+                const text = await res.text();
+                if (text.trim().startsWith('<')) throw new Error("Error de permisos en Apps Script");
+                const resultado = JSON.parse(text);
                 if (resultado.status === "success") {
                     bootstrap.Modal.getInstance(document.getElementById('modalNuevoProducto')).hide();
                     alert("✅ Producto agregado correctamente:\n\n" + nombre + "\nStock: " + stockInicial);
                     productosCache = []; productosCacheTime = 0;
                     await cargarProductosCaja(); await cargarStock();
                 } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo agregar el producto")); }
-            } catch (e) { console.error("❌ Error al agregar producto:", e); alert("❌ Error de conexión al agregar el producto."); }
+            } catch (e) { console.error("❌ Error al agregar producto:", e); alert("❌ Error de conexión. Verifica que el Apps Script tenga permisos de 'Cualquier persona'."); }
         }
 
         function abrirModalReabastecer(id, nombre, stockActual) {
@@ -592,7 +602,9 @@
             if (!cantidad || cantidad <= 0) { alert("⚠️ Ingresa una cantidad válida mayor a 0."); return; }
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "reabastecerStock", id: id, cantidad: cantidad }) });
-                const resultado = await res.json();
+                const text = await res.text();
+                if (text.trim().startsWith('<')) throw new Error("Error de permisos en Apps Script (devolvió HTML)");
+                const resultado = JSON.parse(text);
                 if (resultado.status === "success") {
                     bootstrap.Modal.getInstance(document.getElementById('modalReabastecer')).hide();
                     alert(`✅ Stock actualizado correctamente.\nNuevo Stock: ${resultado.nuevoStock}\n\n🔄 Las hamburguesas se sincronizaron automáticamente.`);
@@ -600,7 +612,10 @@
                     await cargarProductosCaja();
                     await cargarStock();
                 } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo reabastecer")); }
-            } catch (e) { console.error("❌ Error al reabastecer:", e); alert("❌ Error de conexión al reabastecer."); }
+            } catch (e) { 
+                console.error("❌ Error al reabastecer:", e); 
+                alert("❌ Error de conexión.\n\nAsegúrate de que en el Apps Script, al implementar, hayas seleccionado:\n'Quién tiene acceso: Cualquier persona'"); 
+            }
         }
 
         async function cobrarEImprimir() {
@@ -841,13 +856,15 @@
             if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("⚠️ La imagen es muy grande. Usa una más pequeña o súbela a imgur.com"); return; }
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "actualizarImagenProducto", id: id, nombre: nombre, imagen: imagenAGuardar }) });
-                const resultado = await res.json();
+                const text = await res.text();
+                if (text.trim().startsWith('<')) throw new Error("Error de permisos");
+                const resultado = JSON.parse(text);
                 if (resultado.status === "success") {
                     bootstrap.Modal.getInstance(document.getElementById('modalImagenProducto')).hide();
                     alert("✅ Imagen guardada correctamente");
                     cargarStock(); cargarProductosCaja();
                 } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo guardar")); }
-            } catch (e) { console.error("❌ Error detallado:", e); alert("❌ Error de conexión al guardar."); }
+            } catch (e) { console.error("❌ Error detallado:", e); alert("❌ Error de conexión al guardar. Verifica los permisos del Apps Script."); }
         }
 
         async function abrirModalReceta(productoId, productoNombre) {
@@ -876,7 +893,9 @@
             if (isNaN(cantidad) || cantidad < 0) { alert("Cantidad inválida"); return; }
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "guardarReceta", productoId: String(productoId).trim(), ingredienteId: String(ingId).trim(), cantidad: cantidad }) });
-                const resultado = await res.json();
+                const text = await res.text();
+                if (text.trim().startsWith('<')) throw new Error("Error de permisos");
+                const resultado = JSON.parse(text);
                 if (resultado.status === "success") {
                     btn.innerHTML = '<i class="fa-solid fa-check"></i>'; btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-success');
                     setTimeout(() => { btn.innerHTML = '<i class="fa-solid fa-save"></i>'; btn.classList.remove('btn-success'); btn.classList.add('btn-outline-primary'); }, 1500);
@@ -1001,13 +1020,15 @@
             if (!desc || !monto) { alert("Complete descripción y monto"); return; }
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "registrarGasto", fecha: new Date().toLocaleDateString(), descripcion: desc, monto: Number(monto) }) });
-                const resultado = await res.json();
+                const text = await res.text();
+                if (text.trim().startsWith('<')) throw new Error("Error de permisos");
+                const resultado = JSON.parse(text);
                 if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo guardar")); return; }
                 alert("✅ Gasto registrado exitosamente");
                 document.getElementById("gasto-desc").value = "";
                 document.getElementById("gasto-monto").value = "";
                 calcularBalance();
-            } catch (e) { console.error(e); alert("❌ Error al guardar gasto.\n\n" + e.message); }
+            } catch (e) { console.error(e); alert("❌ Error al guardar gasto. Verifica los permisos del Apps Script."); }
         }
 
         async function buscarPedidosParaCancelar(forzarRecarga = false) {
@@ -1085,7 +1106,7 @@
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "cancelarPedido", criterio: idLimpio }) });
                 const texto = await res.text();
                 let resultado;
-                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Respuesta inválida del servidor.\n\n" + texto.substring(0, 200)); return; }
+                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Respuesta inválida del servidor."); return; }
                 if (resultado.status !== "success") { alert("❌ NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido.")); return; }
                 try { const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos")); if (modal) modal.hide(); } catch (e) {}
                 alert("✅ PEDIDO CANCELADO\n\nOrden #" + idLimpio + "\n\nEl total fue puesto en 0 Gs.\nEl stock fue reintegrado.");
@@ -1097,7 +1118,7 @@
                 try { if (typeof cargarStock === "function") await cargarStock(); } catch (e) {}
             } catch (error) {
                 console.error(" ERROR REAL AL CANCELAR:", error);
-                alert("❌ NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nDetalle: " + error.message);
+                alert("❌ NO SE PUDO CONECTAR CON GOOGLE SHEETS.");
                 try { const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos")); if (modal) modal.hide(); } catch (e) {}
             }
         }
