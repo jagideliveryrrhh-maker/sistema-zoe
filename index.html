@@ -51,9 +51,25 @@
             transition: opacity 0.3s; z-index: 1000;
         }
         .indicador-actualizacion.mostrar { opacity: 1; }
-        /* ✅ MEJORA: Modal no bloqueante */
         .modal-backdrop.show { opacity: 0.4; }
         .modal { backdrop-filter: blur(2px); }
+        
+        @media print {
+            @page { margin: 0; size: 58mm auto; }
+            body * { visibility: hidden; }
+            #ticket-impresion, #ticket-impresion * { visibility: visible; }
+            #ticket-impresion {
+                position: absolute; left: 0; top: 0; width: 58mm;
+                padding: 3mm; background: white; font-family: 'Courier New', monospace; font-size: 11px;
+                color: black;
+            }
+            .ticket-centro { text-align: center; }
+            .ticket-derecha { text-align: right; }
+            .ticket-izquierda { text-align: left; }
+            .ticket-negrita { font-weight: bold; font-size: 13px; }
+            .ticket-linea { border-bottom: 1px dashed #000; margin: 3px 0; }
+            .ticket-item { display: flex; justify-content: space-between; margin-bottom: 2px; }
+        }
     </style>
 </head>
 <body>
@@ -222,7 +238,21 @@
         </div>
     </div>
 
-    <!-- Modales con backdrop habilitado para no bloquear -->
+    <div id="ticket-impresion" class="oculto">
+        <div class="ticket-centro ticket-negrita" style="font-size: 14px;">ZOE FAT FOOD</div>
+        <div class="ticket-linea"></div>
+        <div class="ticket-izquierda">Orden: <span id="t-orden" class="ticket-negrita"></span></div>
+        <div class="ticket-izquierda">Fecha: <span id="t-fecha"></span></div>
+        <div class="ticket-izquierda">Hora: <span id="t-hora"></span></div>
+        <div class="ticket-izquierda">Cliente: <span id="t-cliente"></span></div>
+        <div class="ticket-linea"></div>
+        <div id="t-items"></div>
+        <div class="ticket-linea"></div>
+        <div class="ticket-item ticket-negrita" style="font-size: 13px;"><span>TOTAL</span><span id="t-total"></span></div>
+        <div class="ticket-linea"></div>
+        <div class="ticket-centro" style="font-size: 10px;">¡Gracias por su compra!</div>
+    </div>
+
     <div class="modal fade" id="modalCena" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -502,20 +532,32 @@
                     } catch (e) { console.error("Error parseando respuesta:", e); }
                 }).catch(err => console.error("❌ Error al registrar venta:", err));
 
-                let itemsHTML = carrito.map(i => `<div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px;"><span>${i.cantidad}x ${i.nombre}</span><span>${(i.precio * i.cantidad).toLocaleString()} Gs.</span></div>`).join('');
-                let ticketHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Ticket #${ordenId}</title><style>@page { size: 58mm auto; margin: 0; } * { margin: 0; padding: 0; box-sizing: border-box; } body { font-family: 'Courier New', monospace; font-size: 11px; width: 58mm; padding: 3mm; color: #000; } .centro { text-align: center; } .negrita { font-weight: bold; } .grande { font-size: 14px; font-weight: bold; } .linea { border-bottom: 1px dashed #000; margin: 5px 0; } .item { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 11px; } .total { font-size: 13px; font-weight: bold; margin-top: 5px; }</style></head><body><div class="centro grande">ZOE FAT FOOD</div><div class="linea"></div><div><strong>Orden:</strong> #${ordenId}</div><div><strong>Fecha:</strong> ${ahora.toLocaleDateString()}</div><div><strong>Hora:</strong> ${ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div><div><strong>Cliente:</strong> ${cliente}</div><div class="linea"></div>${itemsHTML}<div class="linea"></div><div class="item total"><span>TOTAL</span><span>${total.toLocaleString()} Gs.</span></div><div class="linea"></div><div class="centro" style="font-size: 10px; margin-top: 10px;">¡Gracias por su compra!</div><script>window.onload = function() { setTimeout(() => { window.print(); setTimeout(() => window.close(), 1000); }, 200); };<\/script></body></html>`;
+                let itemsHTML = carrito.map(i => 
+                    `<div class="ticket-item"><span>${i.cantidad} x ${i.nombre}</span><span>${(i.precio * i.cantidad).toLocaleString()}</span></div>`
+                ).join('');
 
-                let ventanaImpresion = window.open('', '_blank', 'width=300,height=600');
-                if (ventanaImpresion) { ventanaImpresion.document.write(ticketHTML); ventanaImpresion.document.close(); } 
-                else { alert("⚠️ Por favor permite las ventanas emergentes para imprimir el ticket."); return; }
+                document.getElementById('t-orden').textContent = ordenId;
+                document.getElementById('t-fecha').textContent = ahora.toLocaleDateString();
+                document.getElementById('t-hora').textContent = ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                document.getElementById('t-cliente').textContent = cliente;
+                document.getElementById('t-items').innerHTML = itemsHTML;
+                document.getElementById('t-total').textContent = total.toLocaleString() + " Gs.";
+
+                window.print();
 
                 carrito = [];
                 document.getElementById("cliente-nombre").value = "";
                 renderizarCarrito();
-                setTimeout(() => { actualizarVentasTurno(); cargarProductosCaja(); if (typeof cargarPedidosCocina === "function") cargarPedidosCocina(); }, 500);
+
+                setTimeout(() => {
+                    actualizarVentasTurno();
+                    cargarProductosCaja();
+                    if (typeof cargarPedidosCocina === "function") cargarPedidosCocina();
+                }, 500);
+
             } catch (error) {
-                console.error("❌ ERROR REGISTRANDO VENTA:", error);
-                alert("❌ NO SE PUDO GUARDAR LA VENTA\n\nDetalle: " + error.message);
+                console.error(" ERROR REGISTRANDO VENTA:", error);
+                alert("❌ NO SE PUDO PROCESAR LA VENTA\n\nDetalle: " + error.message);
             }
         }
 
@@ -558,20 +600,26 @@
                 ventasCache = ventas;
                 ultimaActualizacionCache = Date.now();
                 let html = "";
-                let pedidosVisibles = ventas.slice(-30).reverse().filter(v => {
+                
+                // ✅ CORRECCIÓN: Pedidos del más antiguo al más nuevo (sin reverse)
+                let pedidosVisibles = ventas.slice(-30).filter(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
                     return estado === "pendiente" || estado === "cancelado";
                 });
+                
                 const contador = document.getElementById('contador-pedidos');
                 if (contador) {
                     const pendientes = pedidosVisibles.filter(v => String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase() === "pendiente").length;
                     contador.textContent = pendientes + ' pendiente' + (pendientes !== 1 ? 's' : '');
                     contador.className = pendientes > 0 ? 'badge bg-warning text-dark me-2' : 'badge bg-success me-2';
                 }
+                
                 if (pedidosVisibles.length === 0) {
                     document.getElementById('kds-pedidos').innerHTML = '<div class="text-center text-muted py-5" style="grid-column: 1/-1;"><h5><i class="fa-solid fa-check-circle text-success"></i> No hay pedidos pendientes</h5></div>';
                     return;
                 }
+                
+                // ✅ Ordenar: pendientes primero, luego cancelados (manteniendo orden cronológico)
                 pedidosVisibles.sort((a, b) => {
                     const estadoA = String(a.Estado || a.ESTADO || a.estado || "").trim().toLowerCase();
                     const estadoB = String(b.Estado || b.ESTADO || b.estado || "").trim().toLowerCase();
@@ -579,6 +627,7 @@
                     if (estadoA !== 'pendiente' && estadoB === 'pendiente') return 1;
                     return 0;
                 });
+                
                 pedidosVisibles.forEach(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
                     let claseCard = estado === "cancelado" ? "cancelado" : (estado === "pendiente" ? "pendiente" : "");
@@ -665,59 +714,27 @@
             } catch (e) { console.error(e); }
         }
 
-        // ✅ FUNCIÓN CORREGIDA: Sincroniza stock de hamburguesas con el medallón
         function actualizarStockHamburguesas() {
             const nombreNormalizado = (nombre) => nombre.toLowerCase().replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i').replace(/ó/g, 'o').replace(/ú/g, 'u').replace(/ñ/g, 'n');
-            
             const medallon = listaProductos.find(p => nombreNormalizado(p.Nombre).includes('medallon') || (nombreNormalizado(p.Nombre).includes('carne') && nombreNormalizado(p.Nombre).includes('hamburguesa')));
-            
-            if (!medallon) {
-                alert("⚠️ No se encontró 'Medallón' o 'Carne de Hamburguesa' en el stock.\n\nAsegúrate de tener un producto con ese nombre.");
-                return;
-            }
-            
+            if (!medallon) { alert("⚠️ No se encontró 'Medallón' o 'Carne de Hamburguesa' en el stock."); return; }
             const stockMedallon = medallon['Stock Actual'];
-            
-            const hamburguesaSimple = listaProductos.find(p => 
-                (nombreNormalizado(p.Nombre) === 'hamburguesa simple' || nombreNormalizado(p.Nombre).includes('hamburguesa simple')) &&
-                !nombreNormalizado(p.Nombre).includes('doble') && !nombreNormalizado(p.Nombre).includes('medallon')
-            );
-            
-            const hamburguesaDoble = listaProductos.find(p => 
-                nombreNormalizado(p.Nombre) === 'hamburguesa doble' || nombreNormalizado(p.Nombre).includes('hamburguesa doble')
-            );
-            
+            const hamburguesaSimple = listaProductos.find(p => (nombreNormalizado(p.Nombre) === 'hamburguesa simple' || nombreNormalizado(p.Nombre).includes('hamburguesa simple')) && !nombreNormalizado(p.Nombre).includes('doble') && !nombreNormalizado(p.Nombre).includes('medallon'));
+            const hamburguesaDoble = listaProductos.find(p => nombreNormalizado(p.Nombre) === 'hamburguesa doble' || nombreNormalizado(p.Nombre).includes('hamburguesa doble'));
             let actualizaciones = [];
-            
-            if (hamburguesaSimple) {
-                actualizaciones.push({ id: hamburguesaSimple.ID, nombre: hamburguesaSimple.Nombre, stockAnterior: hamburguesaSimple['Stock Actual'], stockNuevo: stockMedallon, formula: `${stockMedallon} (igual al medallón)` });
-            }
-            if (hamburguesaDoble) {
-                const stockDoble = Math.floor(stockMedallon / 2);
-                actualizaciones.push({ id: hamburguesaDoble.ID, nombre: hamburguesaDoble.Nombre, stockAnterior: hamburguesaDoble['Stock Actual'], stockNuevo: stockDoble, formula: `${stockMedallon} ÷ 2 = ${stockDoble}` });
-            }
-            
-            if (actualizaciones.length === 0) {
-                alert("⚠️ No se encontraron 'Hamburguesa Simple' ni 'Hamburguesa Doble' para actualizar.");
-                return;
-            }
-            
+            if (hamburguesaSimple) actualizaciones.push({ id: hamburguesaSimple.ID, nombre: hamburguesaSimple.Nombre, stockAnterior: hamburguesaSimple['Stock Actual'], stockNuevo: stockMedallon, formula: `${stockMedallon} (igual al medallón)` });
+            if (hamburguesaDoble) { const stockDoble = Math.floor(stockMedallon / 2); actualizaciones.push({ id: hamburguesaDoble.ID, nombre: hamburguesaDoble.Nombre, stockAnterior: hamburguesaDoble['Stock Actual'], stockNuevo: stockDoble, formula: `${stockMedallon} ÷ 2 = ${stockDoble}` }); }
+            if (actualizaciones.length === 0) { alert("⚠️ No se encontraron hamburguesas para actualizar."); return; }
             let mensaje = "📊 RESUMEN DE ACTUALIZACIÓN DE STOCK\n\n";
             mensaje += `Medallón de Hamburguesa: ${stockMedallon} unidades\n\n`;
             mensaje += "Actualizaciones propuestas:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            actualizaciones.forEach(act => {
-                mensaje += `\n${act.nombre}\n  Stock anterior: ${act.stockAnterior}\n  Stock nuevo: ${act.stockNuevo}\n  Fórmula: ${act.formula}\n`;
-            });
+            actualizaciones.forEach(act => { mensaje += `\n${act.nombre}\n  Stock anterior: ${act.stockAnterior}\n  Stock nuevo: ${act.stockNuevo}\n  Fórmula: ${act.formula}\n`; });
             mensaje += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n¿Desea aplicar estos cambios?";
-            
             if (confirm(mensaje)) {
-                actualizaciones.forEach(act => {
-                    const producto = listaProductos.find(p => p.ID === act.id);
-                    if (producto) producto['Stock Actual'] = act.stockNuevo;
-                });
+                actualizaciones.forEach(act => { const producto = listaProductos.find(p => p.ID === act.id); if (producto) producto['Stock Actual'] = act.stockNuevo; });
                 renderizarProductosCaja(listaProductos);
                 cargarStock();
-                alert(`✅ Stock de hamburguesas actualizado correctamente.\n\nHamburguesa Simple: ${stockMedallon}\nHamburguesa Doble: ${Math.floor(stockMedallon / 2)}`);
+                alert(`✅ Stock actualizado.\n\nHamburguesa Simple: ${stockMedallon}\nHamburguesa Doble: ${Math.floor(stockMedallon / 2)}`);
             }
         }
 
@@ -963,9 +980,8 @@
             let ventas;
             const ahora = Date.now();
             const cacheValido = ventasCache.length > 0 && ultimaActualizacionCache && (ahora - ultimaActualizacionCache < TIEMPO_CACHE_MS);
-            if (!forzarRecarga && cacheValido) {
-                ventas = ventasCache;
-            } else {
+            if (!forzarRecarga && cacheValido) { ventas = ventasCache; } 
+            else {
                 try {
                     ventas = await fetchConReintentos(API_URL + "?action=getVentas");
                     ventasCache = ventas;
@@ -978,12 +994,10 @@
             const horaActual = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
             const elUltimaAct = document.getElementById('ultima-act-cancelar');
             if (elUltimaAct) elUltimaAct.textContent = horaActual;
-            
             let pedidosActivos = ventas.filter(v => {
                 let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
                 return estado !== "cancelado" && estado !== "archivado" && estado !== "realizado" && estado !== "cancel" && estado !== "archive" && estado !== "complete";
             }).slice(-20).reverse();
-            
             if (criterio) {
                 pedidosActivos = pedidosActivos.filter(v => {
                     let idOrden = String(v.ID_Orden || v.idOrden || "").toLowerCase();
@@ -991,7 +1005,6 @@
                     return idOrden.includes(criterio) || cliente.includes(criterio);
                 });
             }
-            
             let html = "";
             if (pedidosActivos.length === 0) {
                 html = '<div class="text-center text-muted py-4"><i class="fa-solid fa-inbox fa-3x mb-3"></i><p>No hay pedidos activos para cancelar</p></div>';
@@ -1040,19 +1053,16 @@
                 let resultado;
                 try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Respuesta inválida del servidor.\n\n" + texto.substring(0, 200)); return; }
                 if (resultado.status !== "success") { alert("❌ NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido.")); return; }
-                
                 try { const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos")); if (modal) modal.hide(); } catch (e) {}
-                
                 alert("✅ PEDIDO CANCELADO\n\nOrden #" + idLimpio + "\n\nEl total fue puesto en 0 Gs.\nEl stock fue reintegrado.");
                 document.getElementById("criterio-cancelar").value = "";
                 ventasCache = []; ultimaActualizacionCache = null;
-                
                 try { await actualizarVentasTurno(); } catch (e) {}
                 try { await cargarProductosCaja(); } catch (e) {}
                 try { await cargarPedidosCocina(); } catch (e) {}
                 try { if (typeof cargarStock === "function") await cargarStock(); } catch (e) {}
             } catch (error) {
-                console.error("❌ ERROR REAL AL CANCELAR:", error);
+                console.error(" ERROR REAL AL CANCELAR:", error);
                 alert("❌ NO SE PUDO CONECTAR CON GOOGLE SHEETS.\n\nDetalle: " + error.message);
                 try { const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos")); if (modal) modal.hide(); } catch (e) {}
             }
