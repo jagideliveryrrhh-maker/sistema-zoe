@@ -45,29 +45,17 @@
         .cancelar-card .orden-numero { font-weight: 800; color: #dc3545; font-size: 1.1rem; }
         .receta-item { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
         .receta-ingrediente { font-weight: 600; color: #495057; }
-        .indicador-actualizacion {
-            position: fixed; top: 70px; right: 20px; background: #198754; color: white;
-            padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; opacity: 0;
-            transition: opacity 0.3s; z-index: 1000;
-        }
+        .indicador-actualizacion { position: fixed; top: 70px; right: 20px; background: #198754; color: white; padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; opacity: 0; transition: opacity 0.3s; z-index: 1000; }
         .indicador-actualizacion.mostrar { opacity: 1; }
         .modal-backdrop.show { opacity: 0.4; }
         .modal { backdrop-filter: blur(2px); }
-        
         @media print {
             @page { margin: 0; size: 58mm auto; }
             body * { visibility: hidden; }
             #ticket-impresion, #ticket-impresion * { visibility: visible; }
-            #ticket-impresion {
-                position: absolute; left: 0; top: 0; width: 58mm;
-                padding: 3mm; background: white; font-family: 'Courier New', monospace; font-size: 11px;
-                color: black;
-            }
-            .ticket-centro { text-align: center; }
-            .ticket-derecha { text-align: right; }
-            .ticket-izquierda { text-align: left; }
-            .ticket-negrita { font-weight: bold; font-size: 13px; }
-            .ticket-linea { border-bottom: 1px dashed #000; margin: 3px 0; }
+            #ticket-impresion { position: absolute; left: 0; top: 0; width: 58mm; padding: 3mm; background: white; font-family: 'Courier New', monospace; font-size: 11px; color: black; }
+            .ticket-centro { text-align: center; } .ticket-derecha { text-align: right; } .ticket-izquierda { text-align: left; }
+            .ticket-negrita { font-weight: bold; font-size: 13px; } .ticket-linea { border-bottom: 1px dashed #000; margin: 3px 0; }
             .ticket-item { display: flex; justify-content: space-between; margin-bottom: 2px; }
         }
     </style>
@@ -176,10 +164,12 @@
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h4>Inventario</h4>
                         <div>
-                            <button class="btn btn-success btn-sm me-2" onclick="abrirModalNuevoProducto()"><i class="fa-solid fa-plus"></i> Agregar Producto</button>
-                            <button class="btn btn-primary btn-sm me-2" onclick="actualizarStockHamburguesas()"><i class="fa-solid fa-calculator"></i> Sincronizar Hamburguesas</button>
+                            <button class="btn btn-success btn-sm me-2" onclick="abrirModalNuevoProducto()"><i class="fa-solid fa-plus"></i> Nuevo Producto</button>
                             <button class="btn btn-danger btn-sm" onclick="cargarStock()"><i class="fa-solid fa-rotate"></i> Actualizar</button>
                         </div>
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="fa-solid fa-info-circle"></i> El stock de hamburguesas se sincroniza automáticamente con el stock del Medallón.
                     </div>
                     <div class="table-responsive bg-white p-2 shadow-sm rounded">
                         <table class="table table-sm table-striped align-middle">
@@ -253,7 +243,30 @@
         <div class="ticket-centro" style="font-size: 10px;">¡Gracias por su compra!</div>
     </div>
 
-    <!-- Modal Nuevo Producto -->
+    <div class="modal fade" id="modalReabastecer" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-box-open"></i> Reabastecer Stock</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="reabastecer-id">
+                    <p class="fw-bold mb-2">Producto: <span id="reabastecer-nombre" class="text-primary"></span></p>
+                    <p class="text-muted mb-3">Stock Actual: <span id="reabastecer-actual" class="fw-bold"></span></p>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Cantidad a sumar *</label>
+                        <input type="number" id="reabastecer-cantidad" class="form-control" placeholder="Ej: 20" min="1">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-info text-white" onclick="ejecutarReabastecimiento()"><i class="fa-solid fa-plus"></i> Sumar al Stock</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="modalNuevoProducto" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -262,38 +275,19 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Nombre del Producto *</label>
-                        <input type="text" id="nuevo-prod-nombre" class="form-control" placeholder="Ej: Hamburguesa Simple">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Categoría *</label>
+                    <div class="mb-3"><label class="form-label fw-bold">Nombre del Producto *</label><input type="text" id="nuevo-prod-nombre" class="form-control" placeholder="Ej: Hamburguesa Simple"></div>
+                    <div class="mb-3"><label class="form-label fw-bold">Categoría *</label>
                         <select id="nuevo-prod-categoria" class="form-select">
-                            <option value="Preparado">Preparado</option>
-                            <option value="Ingrediente">Ingrediente</option>
-                            <option value="Bebida">Bebida</option>
-                            <option value="Postre">Postre</option>
+                            <option value="Preparado">Preparado</option><option value="Ingrediente">Ingrediente</option><option value="Bebida">Bebida</option><option value="Postre">Postre</option>
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Precio (Gs.) *</label>
-                        <input type="number" id="nuevo-prod-precio" class="form-control" placeholder="Ej: 10000" min="0">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Stock Inicial *</label>
-                        <input type="number" id="nuevo-prod-stock-inicial" class="form-control" placeholder="Ej: 50" min="0">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Stock Mínimo</label>
-                        <input type="number" id="nuevo-prod-stock-minimo" class="form-control" placeholder="Ej: 10" min="0" value="10">
-                    </div>
-                    <div class="alert alert-info">
-                        <i class="fa-solid fa-info-circle"></i> Los campos marcados con * son obligatorios.
-                    </div>
+                    <div class="mb-3"><label class="form-label fw-bold">Precio (Gs.) *</label><input type="number" id="nuevo-prod-precio" class="form-control" placeholder="Ej: 10000" min="0"></div>
+                    <div class="mb-3"><label class="form-label fw-bold">Stock Inicial *</label><input type="number" id="nuevo-prod-stock-inicial" class="form-control" placeholder="Ej: 50" min="0"></div>
+                    <div class="mb-3"><label class="form-label fw-bold">Stock Mínimo</label><input type="number" id="nuevo-prod-stock-minimo" class="form-control" placeholder="Ej: 10" min="0" value="10"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-success" onclick="guardarNuevoProducto()"><i class="fa-solid fa-save"></i> Guardar Producto</button>
+                    <button type="button" class="btn btn-success" onclick="guardarNuevoProducto()"><i class="fa-solid fa-save"></i> Guardar</button>
                 </div>
             </div>
         </div>
@@ -370,13 +364,8 @@
         const SESION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
         const INTERVALO_COCINA_MS = 5000;
         let usuarios = [], sesion = null, listaProductos = [], carrito = [], filtroActivo = 'ninguno', imagenBase64 = "";
-        let intervaloCocina = null;
-        let ventasCache = [];
-        let ultimaActualizacionCache = null;
-        const TIEMPO_CACHE_MS = 10000;
-        let productosCache = [];
-        let productosCacheTime = 0;
-        const TIEMPO_CACHE_PRODUCTOS = 30000;
+        let intervaloCocina = null, ventasCache = [], ultimaActualizacionCache = null, TIEMPO_CACHE_MS = 10000;
+        let productosCache = [], productosCacheTime = 0, TIEMPO_CACHE_PRODUCTOS = 30000;
 
         function verificarSesion() {
             const lastActivity = parseInt(localStorage.getItem('zoe_last_activity') || '0');
@@ -558,7 +547,6 @@
             renderizarCarrito();
         }
 
-        // ✅ NUEVA FUNCIÓN: Abrir modal para agregar producto
         function abrirModalNuevoProducto() {
             document.getElementById('nuevo-prod-nombre').value = "";
             document.getElementById('nuevo-prod-categoria').value = "Preparado";
@@ -568,54 +556,51 @@
             new bootstrap.Modal(document.getElementById('modalNuevoProducto'), { backdrop: true, keyboard: true }).show();
         }
 
-        // ✅ NUEVA FUNCIÓN: Guardar nuevo producto
         async function guardarNuevoProducto() {
             let nombre = document.getElementById('nuevo-prod-nombre').value.trim();
             let categoria = document.getElementById('nuevo-prod-categoria').value;
             let precio = Number(document.getElementById('nuevo-prod-precio').value);
             let stockInicial = Number(document.getElementById('nuevo-prod-stock-inicial').value);
             let stockMinimo = Number(document.getElementById('nuevo-prod-stock-minimo').value);
-
-            if (!nombre) { alert("️ El nombre del producto es obligatorio."); return; }
+            if (!nombre) { alert("⚠️ El nombre del producto es obligatorio."); return; }
             if (isNaN(precio) || precio < 0) { alert("⚠️ Ingresa un precio válido."); return; }
             if (isNaN(stockInicial) || stockInicial < 0) { alert("⚠️ Ingresa un stock inicial válido."); return; }
             if (isNaN(stockMinimo) || stockMinimo < 0) { stockMinimo = 10; }
-
             try {
-                const res = await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain;charset=utf-8" },
-                    body: JSON.stringify({
-                        action: "agregarProducto",
-                        nombre: nombre,
-                        categoria: categoria,
-                        precio: precio,
-                        stockInicial: stockInicial,
-                        stockActual: stockInicial,
-                        stockMinimo: stockMinimo
-                    })
-                });
-
-                const texto = await res.text();
-                let resultado;
-                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error en la respuesta del servidor"); return; }
-
+                const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "agregarProducto", nombre: nombre, categoria: categoria, precio: precio, stockInicial: stockInicial, stockActual: stockInicial, stockMinimo: stockMinimo }) });
+                const resultado = await res.json();
                 if (resultado.status === "success") {
                     bootstrap.Modal.getInstance(document.getElementById('modalNuevoProducto')).hide();
                     alert("✅ Producto agregado correctamente:\n\n" + nombre + "\nStock: " + stockInicial);
-                    
-                    // Limpiar caché y recargar
+                    productosCache = []; productosCacheTime = 0;
+                    await cargarProductosCaja(); await cargarStock();
+                } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo agregar el producto")); }
+            } catch (e) { console.error("❌ Error al agregar producto:", e); alert("❌ Error de conexión al agregar el producto."); }
+        }
+
+        function abrirModalReabastecer(id, nombre, stockActual) {
+            document.getElementById('reabastecer-id').value = id;
+            document.getElementById('reabastecer-nombre').textContent = nombre;
+            document.getElementById('reabastecer-actual').textContent = stockActual;
+            document.getElementById('reabastecer-cantidad').value = "";
+            new bootstrap.Modal(document.getElementById('modalReabastecer'), { backdrop: true, keyboard: true }).show();
+        }
+
+        async function ejecutarReabastecimiento() {
+            let id = document.getElementById('reabastecer-id').value;
+            let cantidad = Number(document.getElementById('reabastecer-cantidad').value);
+            if (!cantidad || cantidad <= 0) { alert("⚠️ Ingresa una cantidad válida mayor a 0."); return; }
+            try {
+                const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "reabastecerStock", id: id, cantidad: cantidad }) });
+                const resultado = await res.json();
+                if (resultado.status === "success") {
+                    bootstrap.Modal.getInstance(document.getElementById('modalReabastecer')).hide();
+                    alert(`✅ Stock actualizado correctamente.\nNuevo Stock: ${resultado.nuevoStock}\n\n🔄 Las hamburguesas se sincronizaron automáticamente.`);
                     productosCache = [];
-                    productosCacheTime = 0;
                     await cargarProductosCaja();
                     await cargarStock();
-                } else {
-                    alert("❌ Error: " + (resultado.mensaje || "No se pudo agregar el producto"));
-                }
-            } catch (e) {
-                console.error("❌ Error al agregar producto:", e);
-                alert("❌ Error de conexión al agregar el producto.\n\n" + e.message);
-            }
+                } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo reabastecer")); }
+            } catch (e) { console.error("❌ Error al reabastecer:", e); alert("❌ Error de conexión al reabastecer."); }
         }
 
         async function cobrarEImprimir() {
@@ -625,53 +610,31 @@
             let ordenId = Math.floor(100000 + Math.random() * 900000);
             let ahora = new Date();
             let productosStr = carrito.map(function(i) { return i.cantidad + "x " + i.nombre; }).join(", ");
-
             try {
-                fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain;charset=utf-8" },
-                    body: JSON.stringify({ action: "registrarVenta", idOrden: ordenId, fecha: ahora.toLocaleDateString(), cliente: cliente, hora: ahora.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), productos: productosStr, total: total + " Gs.", estado: "Pendiente" })
-                }).then(res => res.text()).then(texto => {
-                    try {
-                        let resultado = JSON.parse(texto);
-                        if (resultado.status === "success") { ventasCache = []; ultimaActualizacionCache = null; }
-                    } catch (e) { console.error("Error parseando respuesta:", e); }
+                fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "registrarVenta", idOrden: ordenId, fecha: ahora.toLocaleDateString(), cliente: cliente, hora: ahora.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), productos: productosStr, total: total + " Gs.", estado: "Pendiente" }) })
+                .then(res => res.text()).then(texto => {
+                    try { let resultado = JSON.parse(texto); if (resultado.status === "success") { ventasCache = []; ultimaActualizacionCache = null; } } catch (e) { console.error("Error parseando respuesta:", e); }
                 }).catch(err => console.error("❌ Error al registrar venta:", err));
 
-                let itemsHTML = carrito.map(i => 
-                    `<div class="ticket-item"><span>${i.cantidad} x ${i.nombre}</span><span>${(i.precio * i.cantidad).toLocaleString()}</span></div>`
-                ).join('');
-
+                let itemsHTML = carrito.map(i => `<div class="ticket-item"><span>${i.cantidad} x ${i.nombre}</span><span>${(i.precio * i.cantidad).toLocaleString()}</span></div>`).join('');
                 document.getElementById('t-orden').textContent = ordenId;
                 document.getElementById('t-fecha').textContent = ahora.toLocaleDateString();
                 document.getElementById('t-hora').textContent = ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                 document.getElementById('t-cliente').textContent = cliente;
                 document.getElementById('t-items').innerHTML = itemsHTML;
                 document.getElementById('t-total').textContent = total.toLocaleString() + " Gs.";
-
                 window.print();
-
                 carrito = [];
                 document.getElementById("cliente-nombre").value = "";
                 renderizarCarrito();
-
-                setTimeout(() => {
-                    actualizarVentasTurno();
-                    cargarProductosCaja();
-                    if (typeof cargarPedidosCocina === "function") cargarPedidosCocina();
-                }, 500);
-
-            } catch (error) {
-                console.error(" ERROR REGISTRANDO VENTA:", error);
-                alert("❌ NO SE PUDO PROCESAR LA VENTA\n\nDetalle: " + error.message);
-            }
+                setTimeout(() => { actualizarVentasTurno(); cargarProductosCaja(); if (typeof cargarPedidosCocina === "function") cargarPedidosCocina(); }, 500);
+            } catch (error) { console.error(" ERROR REGISTRANDO VENTA:", error); alert("❌ NO SE PUDO PROCESAR LA VENTA\n\nDetalle: " + error.message); }
         }
 
         async function actualizarVentasTurno() {
             try {
                 let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
-                ventasCache = ventas;
-                ultimaActualizacionCache = Date.now();
+                ventasCache = ventas; ultimaActualizacionCache = Date.now();
                 let indiceCorte = Number(localStorage.getItem('zoe_indice_corte')) || 0;
                 if (indiceCorte > ventas.length) { indiceCorte = 0; localStorage.setItem('zoe_indice_corte', 0); }
                 let totalTurno = 0;
@@ -703,8 +666,7 @@
         async function cargarPedidosCocina() {
             try {
                 let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
-                ventasCache = ventas;
-                ultimaActualizacionCache = Date.now();
+                ventasCache = ventas; ultimaActualizacionCache = Date.now();
                 let html = "";
                 let pedidosVisibles = ventas.slice(-30).filter(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
@@ -754,10 +716,7 @@
                     html += `<div class="kds-card shadow-sm ${claseCard}"><div class="card-body py-3"><div class="d-flex justify-content-between align-items-center mb-2"><h5 class="kds-orden-numero">Orden #${ordenId}</h5><span class="badge ${badgeClase} px-3 py-2" style="font-size: 0.85rem;">${badgeTexto}</span></div><div class="kds-cliente"><i class="fa-solid fa-user"></i> ${cliente}</div>${productosLista}<div class="kds-hora"><i class="fa-regular fa-clock"></i> ${hora}</div><div class="d-grid gap-2 mt-2">${botonHTML}</div></div></div>`;
                 });
                 document.getElementById('kds-pedidos').innerHTML = html;
-            } catch (e) { 
-                console.error("Error cargando cocina:", e); 
-                document.getElementById('kds-pedidos').innerHTML = '<div class="text-center text-danger py-4" style="grid-column: 1/-1;">Error cargando pedidos</div>'; 
-            }
+            } catch (e) { console.error("Error cargando cocina:", e); document.getElementById('kds-pedidos').innerHTML = '<div class="text-center text-danger py-4" style="grid-column: 1/-1;">Error cargando pedidos</div>'; }
         }
 
         async function marcarPedidoRealizado(ordenId) {
@@ -807,34 +766,11 @@
                     } else { imgHTML = `<i class="fa-solid fa-image text-muted" style="font-size: 2rem;"></i>`; }
                     let esIngrediente = categoria.toLowerCase() === "ingrediente";
                     let btnReceta = esIngrediente ? '' : `<button class="btn btn-sm btn-success mb-1" onclick="abrirModalReceta('${id}', '${nombre.replace(/'/g, "\\'")}')"><i class="fa-solid fa-utensils"></i> Receta</button>`;
-                    html += `<tr class="${claseFila}"><td>${imgHTML}</td><td><strong>${nombre}</strong></td><td><span class="badge ${esIngrediente ? 'bg-info' : 'bg-primary'}">${categoria}</span></td><td>${stockActual}</td><td>${stockMinimo > 0 ? stockMinimo : '-'}</td><td><button class="btn btn-sm btn-primary mb-1" onclick="abrirModalImagen('${id}', '${nombre.replace(/'/g, "\\'")}', '${imagen.replace(/'/g, "\\'")}')"><i class="fa-solid fa-image"></i></button>${btnReceta}</td></tr>`;
+                    let btnReabastecer = `<button class="btn btn-sm btn-info text-white mb-1 me-1" onclick="abrirModalReabastecer('${id}', '${nombre.replace(/'/g, "\\'")}', ${stockActual})"><i class="fa-solid fa-plus"></i></button>`;
+                    html += `<tr class="${claseFila}"><td>${imgHTML}</td><td><strong>${nombre}</strong></td><td><span class="badge ${esIngrediente ? 'bg-info' : 'bg-primary'}">${categoria}</span></td><td>${stockActual}</td><td>${stockMinimo > 0 ? stockMinimo : '-'}</td><td>${btnReabastecer}<button class="btn btn-sm btn-primary mb-1" onclick="abrirModalImagen('${id}', '${nombre.replace(/'/g, "\\'")}', '${imagen.replace(/'/g, "\\'")}')"><i class="fa-solid fa-image"></i></button>${btnReceta}</td></tr>`;
                 });
                 document.getElementById('stock-tabla').innerHTML = html || '<tr><td colspan="6" class="text-center">Sin datos</td></tr>';
             } catch (e) { console.error(e); }
-        }
-
-        function actualizarStockHamburguesas() {
-            const nombreNormalizado = (nombre) => nombre.toLowerCase().replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i').replace(/ó/g, 'o').replace(/ú/g, 'u').replace(/ñ/g, 'n');
-            const medallon = listaProductos.find(p => nombreNormalizado(p.Nombre).includes('medallon') || (nombreNormalizado(p.Nombre).includes('carne') && nombreNormalizado(p.Nombre).includes('hamburguesa')));
-            if (!medallon) { alert("⚠️ No se encontró 'Medallón' o 'Carne de Hamburguesa' en el stock."); return; }
-            const stockMedallon = medallon['Stock Actual'];
-            const hamburguesaSimple = listaProductos.find(p => (nombreNormalizado(p.Nombre) === 'hamburguesa simple' || nombreNormalizado(p.Nombre).includes('hamburguesa simple')) && !nombreNormalizado(p.Nombre).includes('doble') && !nombreNormalizado(p.Nombre).includes('medallon'));
-            const hamburguesaDoble = listaProductos.find(p => nombreNormalizado(p.Nombre) === 'hamburguesa doble' || nombreNormalizado(p.Nombre).includes('hamburguesa doble'));
-            let actualizaciones = [];
-            if (hamburguesaSimple) actualizaciones.push({ id: hamburguesaSimple.ID, nombre: hamburguesaSimple.Nombre, stockAnterior: hamburguesaSimple['Stock Actual'], stockNuevo: stockMedallon, formula: `${stockMedallon} (igual al medallón)` });
-            if (hamburguesaDoble) { const stockDoble = Math.floor(stockMedallon / 2); actualizaciones.push({ id: hamburguesaDoble.ID, nombre: hamburguesaDoble.Nombre, stockAnterior: hamburguesaDoble['Stock Actual'], stockNuevo: stockDoble, formula: `${stockMedallon} ÷ 2 = ${stockDoble}` }); }
-            if (actualizaciones.length === 0) { alert("⚠️ No se encontraron hamburguesas para actualizar."); return; }
-            let mensaje = "📊 RESUMEN DE ACTUALIZACIÓN DE STOCK\n\n";
-            mensaje += `Medallón de Hamburguesa: ${stockMedallon} unidades\n\n`;
-            mensaje += "Actualizaciones propuestas:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            actualizaciones.forEach(act => { mensaje += `\n${act.nombre}\n  Stock anterior: ${act.stockAnterior}\n  Stock nuevo: ${act.stockNuevo}\n  Fórmula: ${act.formula}\n`; });
-            mensaje += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n¿Desea aplicar estos cambios?";
-            if (confirm(mensaje)) {
-                actualizaciones.forEach(act => { const producto = listaProductos.find(p => p.ID === act.id); if (producto) producto['Stock Actual'] = act.stockNuevo; });
-                renderizarProductosCaja(listaProductos);
-                cargarStock();
-                alert(`✅ Stock actualizado.\n\nHamburguesa Simple: ${stockMedallon}\nHamburguesa Doble: ${Math.floor(stockMedallon / 2)}`);
-            }
         }
 
         function abrirModalImagen(id, nombre, urlImagen) {
@@ -1083,8 +1019,7 @@
             else {
                 try {
                     ventas = await fetchConReintentos(API_URL + "?action=getVentas");
-                    ventasCache = ventas;
-                    ultimaActualizacionCache = ahora;
+                    ventasCache = ventas; ultimaActualizacionCache = ahora;
                 } catch (e) {
                     document.getElementById('lista-pedidos-cancelar').innerHTML = '<div class="text-center text-danger py-4">Error cargando pedidos</div>';
                     return;
