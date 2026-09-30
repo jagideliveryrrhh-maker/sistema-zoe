@@ -464,12 +464,13 @@
             if (sesion.rol === "COCINA" || sesion.rol === "ADMIN") { setTimeout(cargarPedidosCocina, 300); }
         }
 
-        // ✅ FETCH ULTRA-RÁPIDO CON TIMEOUT
+        // ✅ FETCH CON TIMEOUT AUMENTADO A 20 SEGUNDOS
         async function fetchRapido(url, maxIntentos = 2) {
             for (let i = 0; i < maxIntentos; i++) {
                 try {
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 5000);
+                    // ✅ AUMENTADO DE 5s A 20s (Google Apps Script es lento)
+                    const timeoutId = setTimeout(() => controller.abort(), 20000);
                     
                     const res = await fetch(url, { 
                         signal: controller.signal,
@@ -484,8 +485,15 @@
                     
                     return JSON.parse(text);
                 } catch (e) {
-                    if (i === maxIntentos - 1) throw e;
-                    await new Promise(r => setTimeout(r, 300));
+                    if (e.name === 'AbortError') {
+                        console.warn(`⏱️ Timeout en intento ${i + 1} (20s)`);
+                    }
+                    if (i === maxIntentos - 1) {
+                        console.error("❌ Error final:", e.message);
+                        throw new Error("Sin conexión");
+                    }
+                    // ✅ Delay aumentado a 1000ms
+                    await new Promise(r => setTimeout(r, 1000));
                 }
             }
         }
