@@ -337,7 +337,7 @@
                     <input type="hidden" id="img-prod-id"><input type="hidden" id="img-prod-nombre">
                     <div class="mb-3"><label class="form-label fw-bold">Producto:</label><p id="img-prod-nombre-display" class="text-primary fw-bold mb-0"></p></div>
                     <div class="mb-3"><label class="form-label fw-bold">📁 Subir desde tu computadora:</label><input type="file" id="img-file-input" class="form-control" accept="image/*" onchange="previsualizarImagenLocal(event)"><small class="text-muted">La imagen se comprimirá automáticamente</small></div>
-                    <div class="mb-3"><label class="form-label fw-bold">🔗 O pega una URL de imagen:</label><input type="text" id="img-prod-url" class="form-control" placeholder="https://ejemplo.com/imagen.jpg" oninput="previsualizarURL()"><small class="text-muted">Puedes subir tu imagen a <a href="https://imgur.com" target="_blank">imgur.com</a> y pegar el link directo</small></div>
+                    <div class="mb-3"><label class="form-label fw-bold"> O pega una URL de imagen:</label><input type="text" id="img-prod-url" class="form-control" placeholder="https://ejemplo.com/imagen.jpg" oninput="previsualizarURL()"><small class="text-muted">Puedes subir tu imagen a <a href="https://imgur.com" target="_blank">imgur.com</a> y pegar el link directo</small></div>
                     <div class="mb-3"><label class="form-label fw-bold">Vista previa:</label><div id="img-preview-container" class="text-center p-3 border rounded bg-light" style="min-height: 150px;"><img id="img-preview" src="" alt="Vista previa" style="max-width: 100%; max-height: 200px; border-radius: 8px; display: none;"><p id="img-preview-placeholder" class="text-muted mb-0">La imagen aparecerá aquí</p></div><small id="img-tamano-info" class="text-muted d-none"></small></div>
                 </div>
                 <div class="modal-footer">
@@ -360,7 +360,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // ✅ TU URL EXACTA
         const API_URL = "https://script.google.com/macros/s/AKfycbzd0p4S7v_cl-i8p_m_Hdnbthr-vw0kMasUdBtPU_OA1gz6FmuNGYRGp7uVxfJqYxld/exec";
         const SESION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
         const INTERVALO_COCINA_MS = 5000;
@@ -393,7 +392,7 @@
                 document.getElementById('cargando-usuarios').classList.add('d-none');
                 document.getElementById('btn-ingresar').disabled = false;
             } catch (e) { 
-                document.getElementById('cargando-usuarios').innerHTML = '<span class="text-danger">Error de conexión. Verifica la URL del Apps Script.</span>'; 
+                document.getElementById('cargando-usuarios').innerHTML = '<span class="text-danger">Error de conexión.</span>'; 
             }
         }
 
@@ -465,8 +464,7 @@
                     const res = await fetch(url);
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     const text = await res.text();
-                    // Verificar que la respuesta sea JSON válido y no HTML de error
-                    if (text.trim().startsWith('<')) throw new Error("El servidor devolvió HTML en lugar de JSON. Verifica los permisos del Apps Script.");
+                    if (text.trim().startsWith('<')) throw new Error("Respuesta inválida");
                     return JSON.parse(text);
                 } catch (e) {
                     if (i === maxIntentos - 1) throw e;
@@ -489,7 +487,7 @@
                 renderizarProductosCaja(listaProductos);
             } catch (e) { 
                 console.error("Error cargando productos:", e);
-                document.getElementById('productos-grid').innerHTML = `<div class="text-center text-danger py-4"><i class="fa-solid fa-triangle-exclamation fa-3x mb-3"></i><p>${e.message}</p><button class="btn btn-sm btn-danger" onclick="cargarProductosCaja()"><i class="fa-solid fa-rotate"></i> Reintentar</button></div>`; 
+                document.getElementById('productos-grid').innerHTML = `<div class="text-center text-danger py-4"><i class="fa-solid fa-triangle-exclamation fa-3x mb-3"></i><p>Error al cargar</p><button class="btn btn-sm btn-danger" onclick="cargarProductosCaja()"><i class="fa-solid fa-rotate"></i> Reintentar</button></div>`; 
             }
         }
 
@@ -570,22 +568,25 @@
             let precio = Number(document.getElementById('nuevo-prod-precio').value);
             let stockInicial = Number(document.getElementById('nuevo-prod-stock-inicial').value);
             let stockMinimo = Number(document.getElementById('nuevo-prod-stock-minimo').value);
-            if (!nombre) { alert("⚠️ El nombre del producto es obligatorio."); return; }
-            if (isNaN(precio) || precio < 0) { alert("⚠️ Ingresa un precio válido."); return; }
-            if (isNaN(stockInicial) || stockInicial < 0) { alert("⚠️ Ingresa un stock inicial válido."); return; }
+            if (!nombre) { alert("⚠️ El nombre es obligatorio."); return; }
+            if (isNaN(precio) || precio < 0) { alert("️ Precio inválido."); return; }
+            if (isNaN(stockInicial) || stockInicial < 0) { alert("⚠️ Stock inválido."); return; }
             if (isNaN(stockMinimo) || stockMinimo < 0) { stockMinimo = 10; }
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "agregarProducto", nombre: nombre, categoria: categoria, precio: precio, stockInicial: stockInicial, stockActual: stockInicial, stockMinimo: stockMinimo }) });
                 const text = await res.text();
-                if (text.trim().startsWith('<')) throw new Error("Error de permisos en Apps Script");
+                if (text.trim().startsWith('<')) throw new Error("Error de permisos");
                 const resultado = JSON.parse(text);
                 if (resultado.status === "success") {
                     bootstrap.Modal.getInstance(document.getElementById('modalNuevoProducto')).hide();
-                    alert("✅ Producto agregado correctamente:\n\n" + nombre + "\nStock: " + stockInicial);
+                    alert("✅ Producto agregado: " + nombre);
                     productosCache = []; productosCacheTime = 0;
                     await cargarProductosCaja(); await cargarStock();
-                } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo agregar el producto")); }
-            } catch (e) { console.error("❌ Error al agregar producto:", e); alert("❌ Error de conexión. Verifica que el Apps Script tenga permisos de 'Cualquier persona'."); }
+                } else { alert("❌ " + (resultado.mensaje || "Error")); }
+            } catch (e) { 
+                console.error(e);
+                alert("❌ Error de conexión. Verifica los permisos del Apps Script."); 
+            }
         }
 
         function abrirModalReabastecer(id, nombre, stockActual) {
@@ -599,22 +600,46 @@
         async function ejecutarReabastecimiento() {
             let id = document.getElementById('reabastecer-id').value;
             let cantidad = Number(document.getElementById('reabastecer-cantidad').value);
-            if (!cantidad || cantidad <= 0) { alert("⚠️ Ingresa una cantidad válida mayor a 0."); return; }
+            if (!cantidad || cantidad <= 0) { alert("⚠️ Ingresa una cantidad válida."); return; }
+            
+            // Mostrar indicador de carga
+            const btn = document.querySelector('#modalReabastecer .btn-info');
+            const textoOriginal = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...';
+            
             try {
-                const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "reabastecerStock", id: id, cantidad: cantidad }) });
+                const res = await fetch(API_URL, { 
+                    method: "POST", 
+                    headers: { "Content-Type": "text/plain;charset=utf-8" }, 
+                    body: JSON.stringify({ action: "reabastecerStock", id: id, cantidad: cantidad }) 
+                });
                 const text = await res.text();
-                if (text.trim().startsWith('<')) throw new Error("Error de permisos en Apps Script (devolvió HTML)");
+                if (text.trim().startsWith('<')) throw new Error("Error de permisos");
                 const resultado = JSON.parse(text);
+                
                 if (resultado.status === "success") {
-                    bootstrap.Modal.getInstance(document.getElementById('modalReabastecer')).hide();
-                    alert(`✅ Stock actualizado correctamente.\nNuevo Stock: ${resultado.nuevoStock}\n\n🔄 Las hamburguesas se sincronizaron automáticamente.`);
+                    // ✅ CERRAR MODAL AUTOMÁTICAMENTE
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('modalReabastecer'));
+                    if (modal) modal.hide();
+                    
+                    // Mostrar mensaje de éxito
+                    alert(`✅ Stock actualizado\n\nNuevo stock: ${resultado.nuevoStock}`);
+                    
+                    // Recargar datos
                     productosCache = [];
                     await cargarProductosCaja();
                     await cargarStock();
-                } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo reabastecer")); }
+                } else { 
+                    alert("❌ " + (resultado.mensaje || "Error al reabastecer")); 
+                }
             } catch (e) { 
-                console.error("❌ Error al reabastecer:", e); 
-                alert("❌ Error de conexión.\n\nAsegúrate de que en el Apps Script, al implementar, hayas seleccionado:\n'Quién tiene acceso: Cualquier persona'"); 
+                console.error("Error al reabastecer:", e); 
+                alert(" Error de conexión.\n\nVerifica:\n1. Tu conexión a internet\n2. Que el Apps Script tenga permisos de 'Cualquier persona'"); 
+            } finally {
+                // Restaurar botón
+                btn.disabled = false;
+                btn.innerHTML = textoOriginal;
             }
         }
 
@@ -628,8 +653,8 @@
             try {
                 fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "registrarVenta", idOrden: ordenId, fecha: ahora.toLocaleDateString(), cliente: cliente, hora: ahora.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), productos: productosStr, total: total + " Gs.", estado: "Pendiente" }) })
                 .then(res => res.text()).then(texto => {
-                    try { let resultado = JSON.parse(texto); if (resultado.status === "success") { ventasCache = []; ultimaActualizacionCache = null; } } catch (e) { console.error("Error parseando respuesta:", e); }
-                }).catch(err => console.error("❌ Error al registrar venta:", err));
+                    try { let resultado = JSON.parse(texto); if (resultado.status === "success") { ventasCache = []; ultimaActualizacionCache = null; } } catch (e) { console.error("Error:", e); }
+                }).catch(err => console.error("Error:", err));
 
                 let itemsHTML = carrito.map(i => `<div class="ticket-item"><span>${i.cantidad} x ${i.nombre}</span><span>${(i.precio * i.cantidad).toLocaleString()}</span></div>`).join('');
                 document.getElementById('t-orden').textContent = ordenId;
@@ -643,7 +668,7 @@
                 document.getElementById("cliente-nombre").value = "";
                 renderizarCarrito();
                 setTimeout(() => { actualizarVentasTurno(); cargarProductosCaja(); if (typeof cargarPedidosCocina === "function") cargarPedidosCocina(); }, 500);
-            } catch (error) { console.error(" ERROR REGISTRANDO VENTA:", error); alert("❌ NO SE PUDO PROCESAR LA VENTA\n\nDetalle: " + error.message); }
+            } catch (error) { console.error("Error:", error); alert("❌ Error al procesar la venta"); }
         }
 
         async function actualizarVentasTurno() {
@@ -663,18 +688,18 @@
                 }
                 document.getElementById('ventas-turno-total').textContent = totalTurno.toLocaleString() + " Gs.";
                 document.getElementById('ventas-cierre-total').textContent = totalTurno.toLocaleString() + " Gs.";
-            } catch (e) { console.error("Error actualizando ventas de turno:", e); }
+            } catch (e) { console.error("Error:", e); }
         }
 
         async function marcarRendido() {
-            if (confirm("¿Confirmar cierre de turno? El contador volverá a 0 Gs.")) {
+            if (confirm("¿Confirmar cierre de turno?")) {
                 try {
                     let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
                     localStorage.setItem('zoe_indice_corte', ventas.length);
                     document.getElementById('ventas-turno-total').textContent = "0 Gs.";
                     document.getElementById('ventas-cierre-total').textContent = "0 Gs.";
-                    alert("✅ Turno rendido. Contador reiniciado a 0 Gs.");
-                } catch (e) { alert("Error al rendir turno."); }
+                    alert("✅ Turno rendido");
+                } catch (e) { alert("Error"); }
             }
         }
 
@@ -694,7 +719,7 @@
                     contador.className = pendientes > 0 ? 'badge bg-warning text-dark me-2' : 'badge bg-success me-2';
                 }
                 if (pedidosVisibles.length === 0) {
-                    document.getElementById('kds-pedidos').innerHTML = '<div class="text-center text-muted py-5" style="grid-column: 1/-1;"><h5><i class="fa-solid fa-check-circle text-success"></i> No hay pedidos pendientes</h5></div>';
+                    document.getElementById('kds-pedidos').innerHTML = '<div class="text-center text-muted py-5" style="grid-column: 1/-1;"><h5><i class="fa-solid fa-check-circle text-success"></i> No hay pedidos</h5></div>';
                     return;
                 }
                 pedidosVisibles.sort((a, b) => {
@@ -731,35 +756,35 @@
                     html += `<div class="kds-card shadow-sm ${claseCard}"><div class="card-body py-3"><div class="d-flex justify-content-between align-items-center mb-2"><h5 class="kds-orden-numero">Orden #${ordenId}</h5><span class="badge ${badgeClase} px-3 py-2" style="font-size: 0.85rem;">${badgeTexto}</span></div><div class="kds-cliente"><i class="fa-solid fa-user"></i> ${cliente}</div>${productosLista}<div class="kds-hora"><i class="fa-regular fa-clock"></i> ${hora}</div><div class="d-grid gap-2 mt-2">${botonHTML}</div></div></div>`;
                 });
                 document.getElementById('kds-pedidos').innerHTML = html;
-            } catch (e) { console.error("Error cargando cocina:", e); document.getElementById('kds-pedidos').innerHTML = '<div class="text-center text-danger py-4" style="grid-column: 1/-1;">Error cargando pedidos</div>'; }
+            } catch (e) { console.error("Error:", e); document.getElementById('kds-pedidos').innerHTML = '<div class="text-center text-danger py-4">Error</div>'; }
         }
 
         async function marcarPedidoRealizado(ordenId) {
-            if (!confirm(`¿Marcar pedido #${ordenId} como REALIZADO?\n\nDesaparecerá de la vista de cocina.`)) return;
+            if (!confirm(`¿Marcar pedido #${ordenId} como REALIZADO?`)) return;
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "actualizarEstadoPedido", idOrden: ordenId, estado: "Realizado" }) });
                 const texto = await res.text();
                 let resultado;
-                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error en la respuesta del servidor"); return; }
-                if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo actualizar")); return; }
+                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error"); return; }
+                if (resultado.status !== "success") { alert(" " + (resultado.mensaje || "Error")); return; }
                 ventasCache = []; ultimaActualizacionCache = null;
                 await cargarPedidosCocina();
-                alert("✅ Pedido marcado como REALIZADO");
-            } catch (e) { console.error(e); alert("❌ Error al actualizar.\n\n" + e.message); }
+                alert("✅ Pedido realizado");
+            } catch (e) { console.error(e); alert("❌ Error"); }
         }
 
         async function archivarPedido(ordenId) {
-            if (!confirm(`¿Archivar pedido #${ordenId}?\n\nDesaparecerá de la vista de cocina.`)) return;
+            if (!confirm(`¿Archivar pedido #${ordenId}?`)) return;
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "actualizarEstadoPedido", idOrden: ordenId, estado: "Archivado" }) });
                 const texto = await res.text();
                 let resultado;
-                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error en la respuesta del servidor"); return; }
-                if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo archivar")); return; }
+                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error"); return; }
+                if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "Error")); return; }
                 ventasCache = []; ultimaActualizacionCache = null;
                 await cargarPedidosCocina();
-                alert("✅ Pedido archivado correctamente");
-            } catch (e) { console.error("❌ Error al archivar:", e); alert("❌ Error de conexión al archivar.\n\n" + e.message); }
+                alert("✅ Pedido archivado");
+            } catch (e) { console.error(e); alert("❌ Error"); }
         }
 
         async function cargarStock() {
@@ -808,7 +833,7 @@
         function previsualizarImagenLocal(event) {
             let file = event.target.files[0];
             if (!file) return;
-            if (!file.type.startsWith('image/')) { alert("⚠️ El archivo debe ser una imagen (JPG, PNG)"); return; }
+            if (!file.type.startsWith('image/')) { alert("⚠️ Debe ser una imagen"); return; }
             let reader = new FileReader();
             reader.onload = function(e) {
                 let img = new Image();
@@ -826,7 +851,7 @@
                     let tamanoInfo = document.getElementById('img-tamano-info');
                     preview.src = imagenBase64; preview.style.display = "block"; placeholder.style.display = "none";
                     let tamanoKB = Math.round(imagenBase64.length / 1024);
-                    tamanoInfo.textContent = `Tamaño comprimido: ${tamanoKB} KB (de ${Math.round(file.size/1024)} KB originales)`;
+                    tamanoInfo.textContent = `Tamaño: ${tamanoKB} KB`;
                     tamanoInfo.classList.remove('d-none');
                     document.getElementById('img-prod-url').value = "";
                 };
@@ -842,7 +867,7 @@
             let tamanoInfo = document.getElementById('img-tamano-info');
             if (url) {
                 preview.src = url; preview.style.display = "block"; placeholder.style.display = "none"; tamanoInfo.classList.add('d-none');
-                preview.onerror = function() { this.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = "❌ No se pudo cargar la imagen. Verifica la URL."; };
+                preview.onerror = function() { this.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = "❌ Error al cargar"; };
                 imagenBase64 = "";
             } else { preview.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = "La imagen aparecerá aquí"; }
         }
@@ -852,19 +877,19 @@
             let nombre = document.getElementById('img-prod-nombre').value;
             let url = document.getElementById('img-prod-url').value.trim();
             let imagenAGuardar = imagenBase64 || url;
-            if (!imagenAGuardar) { alert("⚠️ Debes seleccionar una imagen o pegar una URL válida."); return; }
-            if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("⚠️ La imagen es muy grande. Usa una más pequeña o súbela a imgur.com"); return; }
+            if (!imagenAGuardar) { alert("⚠️ Selecciona una imagen"); return; }
+            if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("⚠️ Imagen muy grande"); return; }
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "actualizarImagenProducto", id: id, nombre: nombre, imagen: imagenAGuardar }) });
                 const text = await res.text();
-                if (text.trim().startsWith('<')) throw new Error("Error de permisos");
+                if (text.trim().startsWith('<')) throw new Error("Error");
                 const resultado = JSON.parse(text);
                 if (resultado.status === "success") {
                     bootstrap.Modal.getInstance(document.getElementById('modalImagenProducto')).hide();
-                    alert("✅ Imagen guardada correctamente");
+                    alert("✅ Imagen guardada");
                     cargarStock(); cargarProductosCaja();
-                } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo guardar")); }
-            } catch (e) { console.error("❌ Error detallado:", e); alert("❌ Error de conexión al guardar. Verifica los permisos del Apps Script."); }
+                } else { alert("❌ " + (resultado.mensaje || "Error")); }
+            } catch (e) { console.error(e); alert("❌ Error de conexión"); }
         }
 
         async function abrirModalReceta(productoId, productoNombre) {
@@ -873,7 +898,7 @@
             let producto = productos.find(p => p.ID === productoId);
             let recetaActual = producto.Receta || [];
             let html = `<div class="mb-3"><label class="form-label fw-bold">Producto:</label><p class="text-primary fw-bold mb-0">${productoNombre}</p></div><div class="mb-3"><label class="form-label fw-bold">Ingredientes:</label><div id="lista-recetas">`;
-            if (ingredientes.length === 0) { html += '<div class="alert alert-warning">No hay ingredientes registrados.</div>'; }
+            if (ingredientes.length === 0) { html += '<div class="alert alert-warning">Sin ingredientes</div>'; }
             else {
                 ingredientes.forEach(ing => {
                     let receta = recetaActual.find(r => r.ingredienteId === ing.ID);
@@ -881,7 +906,7 @@
                     html += `<div class="receta-item"><span class="receta-ingrediente">${ing.Nombre}</span><div class="input-group" style="width: 150px;"><input type="number" class="form-control form-control-sm receta-cantidad-input" data-ing-id="${ing.ID}" data-ing-nombre="${ing.Nombre}" value="${cantidad}" min="0" step="1" placeholder="0"><button class="btn btn-sm btn-outline-primary" onclick="guardarRecetaIndividual('${productoId}', this)"><i class="fa-solid fa-save"></i></button></div></div>`;
                 });
             }
-            html += `</div><small class="text-muted">Indica cuántas unidades de cada ingrediente se usan.</small></div>`;
+            html += `</div></div>`;
             document.getElementById('modal-receta-body').innerHTML = html;
             new bootstrap.Modal(document.getElementById('modalReceta'), { backdrop: true, keyboard: true }).show();
         }
@@ -894,13 +919,13 @@
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "guardarReceta", productoId: String(productoId).trim(), ingredienteId: String(ingId).trim(), cantidad: cantidad }) });
                 const text = await res.text();
-                if (text.trim().startsWith('<')) throw new Error("Error de permisos");
+                if (text.trim().startsWith('<')) throw new Error("Error");
                 const resultado = JSON.parse(text);
                 if (resultado.status === "success") {
                     btn.innerHTML = '<i class="fa-solid fa-check"></i>'; btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-success');
                     setTimeout(() => { btn.innerHTML = '<i class="fa-solid fa-save"></i>'; btn.classList.remove('btn-success'); btn.classList.add('btn-outline-primary'); }, 1500);
-                } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo guardar")); }
-            } catch (e) { console.error("❌ Error:", e); alert("❌ Error de conexión."); }
+                } else { alert("❌ " + (resultado.mensaje || "Error")); }
+            } catch (e) { console.error(e); alert("❌ Error"); }
         }
 
         function aplicarFiltroBalance(tipo) {
@@ -950,7 +975,7 @@
                         const dia = String(fecha.getDate()).padStart(2, '0');
                         return `${anio}-${mes}-${dia}`;
                     }
-                } catch (e) { console.error("Error parseando fecha:", s, e); }
+                } catch (e) { console.error("Error:", e); }
             }
             if (s.includes('T')) return s.split('T')[0];
             s = s.split(' ')[0];
@@ -1009,7 +1034,7 @@
                 let elNeto = document.getElementById('balance-neto');
                 elNeto.textContent = neto.toLocaleString() + " Gs.";
                 elNeto.className = neto >= 0 ? "h4 fw-bold text-success" : "h4 fw-bold text-danger";
-            } catch (e) { console.error("ERROR en calcularBalance:", e); }
+            } catch (e) { console.error("ERROR:", e); }
         }
 
         function inicializarBalance() { calcularBalance(); }
@@ -1017,18 +1042,18 @@
         async function guardarGasto() {
             let desc = document.getElementById("gasto-desc").value.trim();
             let monto = document.getElementById("gasto-monto").value.trim();
-            if (!desc || !monto) { alert("Complete descripción y monto"); return; }
+            if (!desc || !monto) { alert("Complete los campos"); return; }
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "registrarGasto", fecha: new Date().toLocaleDateString(), descripcion: desc, monto: Number(monto) }) });
                 const text = await res.text();
-                if (text.trim().startsWith('<')) throw new Error("Error de permisos");
+                if (text.trim().startsWith('<')) throw new Error("Error");
                 const resultado = JSON.parse(text);
-                if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "No se pudo guardar")); return; }
-                alert("✅ Gasto registrado exitosamente");
+                if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "Error")); return; }
+                alert("✅ Gasto registrado");
                 document.getElementById("gasto-desc").value = "";
                 document.getElementById("gasto-monto").value = "";
                 calcularBalance();
-            } catch (e) { console.error(e); alert("❌ Error al guardar gasto. Verifica los permisos del Apps Script."); }
+            } catch (e) { console.error(e); alert("❌ Error"); }
         }
 
         async function buscarPedidosParaCancelar(forzarRecarga = false) {
@@ -1042,7 +1067,7 @@
                     ventas = await fetchConReintentos(API_URL + "?action=getVentas");
                     ventasCache = ventas; ultimaActualizacionCache = ahora;
                 } catch (e) {
-                    document.getElementById('lista-pedidos-cancelar').innerHTML = '<div class="text-center text-danger py-4">Error cargando pedidos</div>';
+                    document.getElementById('lista-pedidos-cancelar').innerHTML = '<div class="text-center text-danger py-4">Error</div>';
                     return;
                 }
             }
@@ -1062,9 +1087,9 @@
             }
             let html = "";
             if (pedidosActivos.length === 0) {
-                html = '<div class="text-center text-muted py-4"><i class="fa-solid fa-inbox fa-3x mb-3"></i><p>No hay pedidos activos para cancelar</p></div>';
+                html = '<div class="text-center text-muted py-4"><i class="fa-solid fa-inbox fa-3x mb-3"></i><p>No hay pedidos</p></div>';
             } else {
-                html = `<p class="text-muted mb-3">Selecciona el pedido que deseas cancelar:</p>`;
+                html = `<p class="text-muted mb-3">Selecciona el pedido:</p>`;
                 pedidosActivos.forEach(v => {
                     let ordenIdRaw = String(v.ID_Orden || v.idOrden || '');
                     let ordenId = ordenIdRaw.replace(/[^0-9]/g, "");
@@ -1085,7 +1110,7 @@
                         });
                         productosLista += '</div>';
                     }
-                    html += `<div class="card cancelar-card shadow-sm"><div class="card-body py-2"><div class="d-flex justify-content-between align-items-center mb-2"><h6 class="orden-numero mb-0">Orden #${ordenId}</h6><span class="badge bg-warning text-dark">${total}</span></div><div class="kds-cliente mb-1"><i class="fa-solid fa-user"></i> ${cliente}<small class="text-muted ms-2"><i class="fa-regular fa-clock"></i> ${hora}</small></div>${productosLista}<div class="d-grid mt-2"><button class="btn btn-danger btn-sm" onclick="confirmarCancelacion('${ordenId}', '${cliente.replace(/'/g, "\\'")}')"><i class="fa-solid fa-ban"></i> CANCELAR ESTE PEDIDO</button></div></div></div>`;
+                    html += `<div class="card cancelar-card shadow-sm"><div class="card-body py-2"><div class="d-flex justify-content-between align-items-center mb-2"><h6 class="orden-numero mb-0">Orden #${ordenId}</h6><span class="badge bg-warning text-dark">${total}</span></div><div class="kds-cliente mb-1"><i class="fa-solid fa-user"></i> ${cliente}<small class="text-muted ms-2"><i class="fa-regular fa-clock"></i> ${hora}</small></div>${productosLista}<div class="d-grid mt-2"><button class="btn btn-danger btn-sm" onclick="confirmarCancelacion('${ordenId}', '${cliente.replace(/'/g, "\\'")}')"><i class="fa-solid fa-ban"></i> CANCELAR</button></div></div></div>`;
                 });
             }
             document.getElementById('lista-pedidos-cancelar').innerHTML = html;
@@ -1093,7 +1118,7 @@
         }
 
         function confirmarCancelacion(ordenId, cliente) {
-            if (confirm(`⚠️ ¿CONFIRMAR CANCELACIÓN?\n\nOrden #${ordenId}\nCliente: ${cliente}\n\nSe reintegrarán los ingredientes al stock.\n\nEsta acción no se puede deshacer.`)) {
+            if (confirm(`️ ¿Cancelar pedido #${ordenId}?\n\nCliente: ${cliente}`)) {
                 cancelarDesdeCaja(ordenId);
             }
         }
@@ -1101,15 +1126,15 @@
         async function cancelarDesdeCaja(ordenId) {
             try {
                 let idLimpio = String(ordenId || "").replace(/[^0-9]/g, "");
-                if (!idLimpio) { alert("❌ ID de pedido inválido."); return; }
+                if (!idLimpio) { alert("❌ ID inválido"); return; }
                 idLimpio = idLimpio.slice(-4);
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "cancelarPedido", criterio: idLimpio }) });
                 const texto = await res.text();
                 let resultado;
-                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Respuesta inválida del servidor."); return; }
-                if (resultado.status !== "success") { alert("❌ NO SE PUDO CANCELAR\n\n" + (resultado.mensaje || "Error desconocido.")); return; }
+                try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error"); return; }
+                if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "Error")); return; }
                 try { const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos")); if (modal) modal.hide(); } catch (e) {}
-                alert("✅ PEDIDO CANCELADO\n\nOrden #" + idLimpio + "\n\nEl total fue puesto en 0 Gs.\nEl stock fue reintegrado.");
+                alert("✅ Pedido cancelado");
                 document.getElementById("criterio-cancelar").value = "";
                 ventasCache = []; ultimaActualizacionCache = null;
                 try { await actualizarVentasTurno(); } catch (e) {}
@@ -1117,8 +1142,8 @@
                 try { await cargarPedidosCocina(); } catch (e) {}
                 try { if (typeof cargarStock === "function") await cargarStock(); } catch (e) {}
             } catch (error) {
-                console.error(" ERROR REAL AL CANCELAR:", error);
-                alert("❌ NO SE PUDO CONECTAR CON GOOGLE SHEETS.");
+                console.error("Error:", error);
+                alert(" Error de conexión");
                 try { const modal = bootstrap.Modal.getInstance(document.getElementById("modalCancelarPedidos")); if (modal) modal.hide(); } catch (e) {}
             }
         }
