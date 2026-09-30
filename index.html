@@ -51,6 +51,13 @@
             transition: opacity 0.3s; z-index: 1000;
         }
         .indicador-actualizacion.mostrar { opacity: 1; }
+        /* ✅ MEJORA: Modal con fondo semi-transparente que permite clickear fuera */
+        .modal-backdrop.show {
+            opacity: 0.5;
+        }
+        .modal {
+            backdrop-filter: blur(2px);
+        }
     </style>
 </head>
 <body>
@@ -156,7 +163,19 @@
                 <div class="tab-pane fade" id="tab-stock">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h4>Inventario</h4>
-                        <button class="btn btn-danger btn-sm" onclick="cargarStock()"><i class="fa-solid fa-rotate"></i> Actualizar</button>
+                        <div>
+                            <button class="btn btn-success btn-sm me-2" onclick="actualizarStockHamburguesas()">
+                                <i class="fa-solid fa-rotate"></i> Actualizar Hamburguesas
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="cargarStock()"><i class="fa-solid fa-rotate"></i> Actualizar</button>
+                        </div>
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="fa-solid fa-info-circle"></i> 
+                        <strong>Nota:</strong> El stock de hamburguesas se calcula automáticamente según el stock de medallones.
+                        <button class="btn btn-sm btn-primary ms-2" onclick="actualizarStockHamburguesas()">
+                            <i class="fa-solid fa-calculator"></i> Calcular Ahora
+                        </button>
                     </div>
                     <div class="table-responsive bg-white p-2 shadow-sm rounded">
                         <table class="table table-sm table-striped align-middle">
@@ -216,7 +235,7 @@
     </div>
 
     <!-- Modales -->
-    <div class="modal fade" id="modalCena" tabindex="-1">
+    <div class="modal fade" id="modalCena" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header bg-warning"><h5 class="modal-title">Cena de Personal</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -225,12 +244,15 @@
                     <input type="number" id="select-cena-cantidad" class="form-control mb-2" value="1" min="1">
                     <input type="text" id="select-cena-obs" class="form-control" placeholder="Observación (opcional)">
                 </div>
-                <div class="modal-footer"><button class="btn btn-warning w-100 fw-bold" onclick="agregarCenaAlPedido()">Agregar</button></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button class="btn btn-warning w-100 fw-bold" onclick="agregarCenaAlPedido()">Agregar</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="modal fade" id="modalCancelarPedidos" tabindex="-1">
+    <div class="modal fade" id="modalCancelarPedidos" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header bg-danger text-white">
@@ -248,33 +270,43 @@
                     </div>
                     <div id="lista-pedidos-cancelar"></div>
                 </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="modal fade" id="modalImagenProducto" tabindex="-1">
+    <div class="modal fade" id="modalImagenProducto" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header bg-primary text-white"><h5 class="modal-title"><i class="fa-solid fa-image"></i> Imagen del Producto</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-image"></i> Imagen del Producto</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
                 <div class="modal-body">
                     <input type="hidden" id="img-prod-id"><input type="hidden" id="img-prod-nombre">
                     <div class="mb-3"><label class="form-label fw-bold">Producto:</label><p id="img-prod-nombre-display" class="text-primary fw-bold mb-0"></p></div>
-                    <div class="mb-3"><label class="form-label fw-bold">📁 Subir desde tu computadora:</label><input type="file" id="img-file-input" class="form-control" accept="image/*" onchange="previsualizarImagenLocal(event)"><small class="text-muted">La imagen se comprimirá automáticamente</small></div>
+                    <div class="mb-3"><label class="form-label fw-bold"> Subir desde tu computadora:</label><input type="file" id="img-file-input" class="form-control" accept="image/*" onchange="previsualizarImagenLocal(event)"><small class="text-muted">La imagen se comprimirá automáticamente</small></div>
                     <div class="mb-3"><label class="form-label fw-bold">🔗 O pega una URL de imagen:</label><input type="text" id="img-prod-url" class="form-control" placeholder="https://ejemplo.com/imagen.jpg" oninput="previsualizarURL()"><small class="text-muted">Puedes subir tu imagen a <a href="https://imgur.com" target="_blank">imgur.com</a> y pegar el link directo</small></div>
                     <div class="mb-3"><label class="form-label fw-bold">Vista previa:</label><div id="img-preview-container" class="text-center p-3 border rounded bg-light" style="min-height: 150px;"><img id="img-preview" src="" alt="Vista previa" style="max-width: 100%; max-height: 200px; border-radius: 8px; display: none;"><p id="img-preview-placeholder" class="text-muted mb-0">La imagen aparecerá aquí</p></div><small id="img-tamano-info" class="text-muted d-none"></small></div>
                 </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-primary" onclick="guardarImagenProducto()"><i class="fa-solid fa-save"></i> Guardar Imagen</button></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="guardarImagenProducto()"><i class="fa-solid fa-save"></i> Guardar Imagen</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="modal fade" id="modalReceta" tabindex="-1">
+    <div class="modal fade" id="modalReceta" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header bg-success text-white"><h5 class="modal-title"><i class="fa-solid fa-utensils"></i> Receta del Producto</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
                 <div class="modal-body" id="modal-receta-body"><div class="text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2">Cargando...</p></div></div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
             </div>
         </div>
     </div>
@@ -542,7 +574,7 @@
                 }, 500);
 
             } catch (error) {
-                console.error("❌ ERROR REGISTRANDO VENTA:", error);
+                console.error(" ERROR REGISTRANDO VENTA:", error);
                 alert("❌ NO SE PUDO GUARDAR LA VENTA\n\nDetalle: " + error.message);
             }
         }
@@ -693,7 +725,7 @@
         async function archivarPedido(ordenId) {
             if (!confirm(`¿Archivar pedido #${ordenId}?\n\nDesaparecerá de la vista de cocina.`)) return;
             try {
-                console.log("️ Archivando pedido:", ordenId);
+                console.log("🗑️ Archivando pedido:", ordenId);
                 const res = await fetch(API_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -743,6 +775,92 @@
             } catch (e) { console.error(e); }
         }
 
+        // ✅ NUEVA FUNCIÓN: Actualizar stock de hamburguesas basado en medallones
+        function actualizarStockHamburguesas() {
+            // Buscar medallones de hamburguesa en la lista de productos
+            const medallonSimple = listaProductos.find(p => 
+                p.Nombre.toLowerCase().includes('medallon') && 
+                p.Nombre.toLowerCase().includes('hamburguesa') && 
+                !p.Nombre.toLowerCase().includes('doble')
+            );
+            
+            const medallonDoble = listaProductos.find(p => 
+                p.Nombre.toLowerCase().includes('medallon') && 
+                p.Nombre.toLowerCase().includes('hamburguesa') && 
+                p.Nombre.toLowerCase().includes('doble')
+            );
+            
+            if (!medallonSimple && !medallonDoble) {
+                alert("⚠️ No se encontraron medallones de hamburguesa en el stock.");
+                return;
+            }
+            
+            let actualizaciones = [];
+            
+            // Hamburguesa Simple = Stock de Medallón Simple
+            if (medallonSimple) {
+                const hamburguesaSimple = listaProductos.find(p => 
+                    p.Nombre.toLowerCase() === 'hamburguesa simple' || 
+                    (p.Nombre.toLowerCase().includes('hamburguesa') && !p.Nombre.toLowerCase().includes('doble'))
+                );
+                
+                if (hamburguesaSimple) {
+                    actualizaciones.push({
+                        id: hamburguesaSimple.ID,
+                        nombre: hamburguesaSimple.Nombre,
+                        stockAnterior: hamburguesaSimple['Stock Actual'],
+                        stockNuevo: medallonSimple['Stock Actual']
+                    });
+                }
+            }
+            
+            // Hamburguesa Doble = Stock de Medallón Doble / 2
+            if (medallonDoble) {
+                const hamburguesaDoble = listaProductos.find(p => 
+                    p.Nombre.toLowerCase() === 'hamburguesa doble' || 
+                    (p.Nombre.toLowerCase().includes('hamburguesa') && p.Nombre.toLowerCase().includes('doble'))
+                );
+                
+                if (hamburguesaDoble) {
+                    const stockDoble = Math.floor(medallonDoble['Stock Actual'] / 2);
+                    actualizaciones.push({
+                        id: hamburguesaDoble.ID,
+                        nombre: hamburguesaDoble.Nombre,
+                        stockAnterior: hamburguesaDoble['Stock Actual'],
+                        stockNuevo: stockDoble
+                    });
+                }
+            }
+            
+            if (actualizaciones.length === 0) {
+                alert("⚠️ No se encontraron hamburguesas para actualizar.");
+                return;
+            }
+            
+            // Confirmar actualización
+            let mensaje = "📊 Resumen de actualizaciones:\n\n";
+            actualizaciones.forEach(act => {
+                mensaje += `${act.nombre}: ${act.stockAnterior} → ${act.stockNuevo}\n`;
+            });
+            mensaje += "\n¿Desea continuar?";
+            
+            if (confirm(mensaje)) {
+                // Actualizar stocks localmente
+                actualizaciones.forEach(act => {
+                    const producto = listaProductos.find(p => p.ID === act.id);
+                    if (producto) {
+                        producto['Stock Actual'] = act.stockNuevo;
+                    }
+                });
+                
+                // Recargar vista
+                renderizarProductosCaja(listaProductos);
+                cargarStock();
+                
+                alert("✅ Stock de hamburguesas actualizado correctamente.");
+            }
+        }
+
         function abrirModalImagen(id, nombre, urlImagen) {
             document.getElementById('img-prod-id').value = id;
             document.getElementById('img-prod-nombre').value = nombre;
@@ -757,13 +875,19 @@
                 if (urlImagen.startsWith('data:image')) { preview.src = urlImagen; preview.style.display = "block"; placeholder.style.display = "none"; imagenBase64 = urlImagen; }
                 else { preview.src = urlImagen; preview.style.display = "block"; placeholder.style.display = "none"; preview.onerror = function() { this.style.display = "none"; placeholder.style.display = "block"; }; }
             } else { preview.style.display = "none"; placeholder.style.display = "block"; }
-            new bootstrap.Modal(document.getElementById('modalImagenProducto')).show();
+            
+            // ✅ MEJORA: Configurar modal para que se pueda cerrar
+            const modal = new bootstrap.Modal(document.getElementById('modalImagenProducto'), {
+                backdrop: true,
+                keyboard: true
+            });
+            modal.show();
         }
 
         function previsualizarImagenLocal(event) {
             let file = event.target.files[0];
             if (!file) return;
-            if (!file.type.startsWith('image/')) { alert("⚠️ El archivo debe ser una imagen (JPG, PNG)"); return; }
+            if (!file.type.startsWith('image/')) { alert("️ El archivo debe ser una imagen (JPG, PNG)"); return; }
             let reader = new FileReader();
             reader.onload = function(e) {
                 let img = new Image();
@@ -807,8 +931,8 @@
             let nombre = document.getElementById('img-prod-nombre').value;
             let url = document.getElementById('img-prod-url').value.trim();
             let imagenAGuardar = imagenBase64 || url;
-            if (!imagenAGuardar) { alert("️ Debes seleccionar una imagen o pegar una URL válida."); return; }
-            if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("️ La imagen es muy grande. Usa una más pequeña o súbela a imgur.com"); return; }
+            if (!imagenAGuardar) { alert("⚠️ Debes seleccionar una imagen o pegar una URL válida."); return; }
+            if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("⚠️ La imagen es muy grande. Usa una más pequeña o súbela a imgur.com"); return; }
             try {
                 const res = await fetch(API_URL, {
                     method: "POST",
@@ -817,7 +941,10 @@
                 });
                 const resultado = await res.json();
                 if (resultado.status === "success") {
-                    bootstrap.Modal.getInstance(document.getElementById('modalImagenProducto')).hide();
+                    // ✅ Cerrar modal correctamente
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('modalImagenProducto'));
+                    if (modal) modal.hide();
+                    
                     alert("✅ Imagen guardada correctamente");
                     cargarStock(); cargarProductosCaja();
                 } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo guardar")); }
@@ -841,7 +968,13 @@
             }
             html += `</div><small class="text-muted">Indica cuántas unidades de cada ingrediente se usan.</small></div>`;
             document.getElementById('modal-receta-body').innerHTML = html;
-            new bootstrap.Modal(document.getElementById('modalReceta')).show();
+            
+            // ✅ MEJORA: Configurar modal para que se pueda cerrar
+            const modal = new bootstrap.Modal(document.getElementById('modalReceta'), {
+                backdrop: true,
+                keyboard: true
+            });
+            modal.show();
         }
 
         async function guardarRecetaIndividual(productoId, btn) {
@@ -859,7 +992,7 @@
                 if (resultado.status === "success") {
                     btn.innerHTML = '<i class="fa-solid fa-check"></i>'; btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-success');
                     setTimeout(() => { btn.innerHTML = '<i class="fa-solid fa-save"></i>'; btn.classList.remove('btn-success'); btn.classList.add('btn-outline-primary'); }, 1500);
-                } else { alert(" Error: " + (resultado.mensaje || "No se pudo guardar")); }
+                } else { alert("❌ Error: " + (resultado.mensaje || "No se pudo guardar")); }
             } catch (e) { console.error("❌ Error:", e); alert("❌ Error de conexión."); }
         }
 
@@ -964,14 +1097,14 @@
             let filtroMes = document.getElementById('filtro-mes').value;
             let filtroDia = document.getElementById('filtro-dia').value;
             
-            console.log("🔍 Filtros aplicados:", { filtroMes, filtroDia });
+            console.log(" Filtros aplicados:", { filtroMes, filtroDia });
             
             try {
                 let resV = await fetch(API_URL + "?action=getVentas");
                 let ventas = await resV.json();
                 let totalVentas = 0;
                 
-                console.log(" Total de ventas recibidas:", ventas.length);
+                console.log("📊 Total de ventas recibidas:", ventas.length);
                 
                 ventas.forEach(v => {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
@@ -1002,7 +1135,7 @@
                 let gastos = await resG.json();
                 let totalGastos = 0;
                 
-                console.log(" Total de gastos recibidos:", gastos.length);
+                console.log("📊 Total de gastos recibidos:", gastos.length);
                 
                 gastos.forEach(g => {
                     let fechaOriginal = g.Fecha || g.FECHA || g.fecha || "";
@@ -1054,7 +1187,7 @@
                 document.getElementById("gasto-desc").value = "";
                 document.getElementById("gasto-monto").value = "";
                 calcularBalance();
-            } catch (e) { console.error(e); alert(" Error al guardar gasto.\n\n" + e.message); }
+            } catch (e) { console.error(e); alert("❌ Error al guardar gasto.\n\n" + e.message); }
         }
 
         async function buscarPedidosParaCancelar(forzarRecarga = false) {
@@ -1134,7 +1267,13 @@
                 });
             }
             document.getElementById('lista-pedidos-cancelar').innerHTML = html;
-            new bootstrap.Modal(document.getElementById('modalCancelarPedidos')).show();
+            
+            // ✅ MEJORA: Configurar modal para que se pueda cerrar
+            const modal = new bootstrap.Modal(document.getElementById('modalCancelarPedidos'), {
+                backdrop: true,
+                keyboard: true
+            });
+            modal.show();
         }
 
         function confirmarCancelacion(ordenId, cliente) {
