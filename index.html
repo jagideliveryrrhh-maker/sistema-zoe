@@ -49,6 +49,8 @@
         .indicador-actualizacion.mostrar { opacity: 1; }
         .modal-backdrop.show { opacity: 0.4; }
         .modal { backdrop-filter: blur(2px); }
+        .loading-spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #dc3545; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         @media print {
             @page { margin: 0; size: 58mm auto; }
             body * { visibility: hidden; }
@@ -337,7 +339,7 @@
                     <input type="hidden" id="img-prod-id"><input type="hidden" id="img-prod-nombre">
                     <div class="mb-3"><label class="form-label fw-bold">Producto:</label><p id="img-prod-nombre-display" class="text-primary fw-bold mb-0"></p></div>
                     <div class="mb-3"><label class="form-label fw-bold">📁 Subir desde tu computadora:</label><input type="file" id="img-file-input" class="form-control" accept="image/*" onchange="previsualizarImagenLocal(event)"><small class="text-muted">La imagen se comprimirá automáticamente</small></div>
-                    <div class="mb-3"><label class="form-label fw-bold"> O pega una URL de imagen:</label><input type="text" id="img-prod-url" class="form-control" placeholder="https://ejemplo.com/imagen.jpg" oninput="previsualizarURL()"><small class="text-muted">Puedes subir tu imagen a <a href="https://imgur.com" target="_blank">imgur.com</a> y pegar el link directo</small></div>
+                    <div class="mb-3"><label class="form-label fw-bold">🔗 O pega una URL de imagen:</label><input type="text" id="img-prod-url" class="form-control" placeholder="https://ejemplo.com/imagen.jpg" oninput="previsualizarURL()"><small class="text-muted">Puedes subir tu imagen a <a href="https://imgur.com" target="_blank">imgur.com</a> y pegar el link directo</small></div>
                     <div class="mb-3"><label class="form-label fw-bold">Vista previa:</label><div id="img-preview-container" class="text-center p-3 border rounded bg-light" style="min-height: 150px;"><img id="img-preview" src="" alt="Vista previa" style="max-width: 100%; max-height: 200px; border-radius: 8px; display: none;"><p id="img-preview-placeholder" class="text-muted mb-0">La imagen aparecerá aquí</p></div><small id="img-tamano-info" class="text-muted d-none"></small></div>
                 </div>
                 <div class="modal-footer">
@@ -364,8 +366,12 @@
         const SESION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
         const INTERVALO_COCINA_MS = 5000;
         let usuarios = [], sesion = null, listaProductos = [], carrito = [], filtroActivo = 'ninguno', imagenBase64 = "";
-        let intervaloCocina = null, ventasCache = [], ultimaActualizacionCache = null, TIEMPO_CACHE_MS = 10000;
-        let productosCache = [], productosCacheTime = 0, TIEMPO_CACHE_PRODUCTOS = 30000;
+        let intervaloCocina = null;
+        
+        // ✅ SISTEMA DE CACHÉ UNIFICADO
+        let ventasCache = [], ultimaActualizacionCache = null, TIEMPO_CACHE_MS = 30000;
+        let productosCache = [], productosCacheTime = 0, TIEMPO_CACHE_PRODUCTOS = 60000;
+        let gastosCache = null, gastosCacheTotal = 0, gastosCacheTime = 0;
 
         function verificarSesion() {
             const lastActivity = parseInt(localStorage.getItem('zoe_last_activity') || '0');
@@ -458,17 +464,28 @@
             if (sesion.rol === "COCINA" || sesion.rol === "ADMIN") { setTimeout(cargarPedidosCocina, 300); }
         }
 
-        async function fetchConReintentos(url, maxIntentos = 3) {
+        // ✅ FETCH ULTRA-RÁPIDO CON TIMEOUT
+        async function fetchRapido(url, maxIntentos = 2) {
             for (let i = 0; i < maxIntentos; i++) {
                 try {
-                    const res = await fetch(url);
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);
+                    
+                    const res = await fetch(url, { 
+                        signal: controller.signal,
+                        cache: 'no-store'
+                    });
+                    clearTimeout(timeoutId);
+                    
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    
                     const text = await res.text();
-                    if (text.trim().startsWith('<')) throw new Error("Respuesta inválida");
+                    if (text.trim().startsWith('<')) throw new Error("HTML response");
+                    
                     return JSON.parse(text);
                 } catch (e) {
                     if (i === maxIntentos - 1) throw e;
-                    await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+                    await new Promise(r => setTimeout(r, 300));
                 }
             }
         }
@@ -481,12 +498,12 @@
                     renderizarProductosCaja(listaProductos);
                     return;
                 }
-                listaProductos = await fetchConReintentos(API_URL + "?action=getStock");
+                listaProductos = await fetchRapido(API_URL + "?action=getStock");
                 productosCache = listaProductos;
                 productosCacheTime = ahora;
                 renderizarProductosCaja(listaProductos);
             } catch (e) { 
-                console.error("Error cargando productos:", e);
+                console.error("Error:", e);
                 document.getElementById('productos-grid').innerHTML = `<div class="text-center text-danger py-4"><i class="fa-solid fa-triangle-exclamation fa-3x mb-3"></i><p>Error al cargar</p><button class="btn btn-sm btn-danger" onclick="cargarProductosCaja()"><i class="fa-solid fa-rotate"></i> Reintentar</button></div>`; 
             }
         }
@@ -569,13 +586,13 @@
             let stockInicial = Number(document.getElementById('nuevo-prod-stock-inicial').value);
             let stockMinimo = Number(document.getElementById('nuevo-prod-stock-minimo').value);
             if (!nombre) { alert("⚠️ El nombre es obligatorio."); return; }
-            if (isNaN(precio) || precio < 0) { alert("️ Precio inválido."); return; }
-            if (isNaN(stockInicial) || stockInicial < 0) { alert("⚠️ Stock inválido."); return; }
+            if (isNaN(precio) || precio < 0) { alert("⚠️ Precio inválido."); return; }
+            if (isNaN(stockInicial) || stockInicial < 0) { alert("️ Stock inválido."); return; }
             if (isNaN(stockMinimo) || stockMinimo < 0) { stockMinimo = 10; }
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "agregarProducto", nombre: nombre, categoria: categoria, precio: precio, stockInicial: stockInicial, stockActual: stockInicial, stockMinimo: stockMinimo }) });
                 const text = await res.text();
-                if (text.trim().startsWith('<')) throw new Error("Error de permisos");
+                if (text.trim().startsWith('<')) throw new Error("Error");
                 const resultado = JSON.parse(text);
                 if (resultado.status === "success") {
                     bootstrap.Modal.getInstance(document.getElementById('modalNuevoProducto')).hide();
@@ -583,10 +600,7 @@
                     productosCache = []; productosCacheTime = 0;
                     await cargarProductosCaja(); await cargarStock();
                 } else { alert("❌ " + (resultado.mensaje || "Error")); }
-            } catch (e) { 
-                console.error(e);
-                alert("❌ Error de conexión. Verifica los permisos del Apps Script."); 
-            }
+            } catch (e) { console.error(e); alert("❌ Error de conexión"); }
         }
 
         function abrirModalReabastecer(id, nombre, stockActual) {
@@ -600,44 +614,29 @@
         async function ejecutarReabastecimiento() {
             let id = document.getElementById('reabastecer-id').value;
             let cantidad = Number(document.getElementById('reabastecer-cantidad').value);
-            if (!cantidad || cantidad <= 0) { alert("⚠️ Ingresa una cantidad válida."); return; }
+            if (!cantidad || cantidad <= 0) { alert("⚠️ Cantidad inválida"); return; }
             
-            // Mostrar indicador de carga
             const btn = document.querySelector('#modalReabastecer .btn-info');
             const textoOriginal = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...';
             
             try {
-                const res = await fetch(API_URL, { 
-                    method: "POST", 
-                    headers: { "Content-Type": "text/plain;charset=utf-8" }, 
-                    body: JSON.stringify({ action: "reabastecerStock", id: id, cantidad: cantidad }) 
-                });
+                const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "reabastecerStock", id: id, cantidad: cantidad }) });
                 const text = await res.text();
-                if (text.trim().startsWith('<')) throw new Error("Error de permisos");
+                if (text.trim().startsWith('<')) throw new Error("Error");
                 const resultado = JSON.parse(text);
                 
                 if (resultado.status === "success") {
-                    // ✅ CERRAR MODAL AUTOMÁTICAMENTE
                     const modal = bootstrap.Modal.getInstance(document.getElementById('modalReabastecer'));
                     if (modal) modal.hide();
-                    
-                    // Mostrar mensaje de éxito
-                    alert(`✅ Stock actualizado\n\nNuevo stock: ${resultado.nuevoStock}`);
-                    
-                    // Recargar datos
+                    alert(`✅ Stock actualizado: ${resultado.nuevoStock}`);
                     productosCache = [];
                     await cargarProductosCaja();
                     await cargarStock();
-                } else { 
-                    alert("❌ " + (resultado.mensaje || "Error al reabastecer")); 
-                }
-            } catch (e) { 
-                console.error("Error al reabastecer:", e); 
-                alert(" Error de conexión.\n\nVerifica:\n1. Tu conexión a internet\n2. Que el Apps Script tenga permisos de 'Cualquier persona'"); 
-            } finally {
-                // Restaurar botón
+                } else { alert("❌ " + (resultado.mensaje || "Error")); }
+            } catch (e) { console.error(e); alert(" Error de conexión"); }
+            finally {
                 btn.disabled = false;
                 btn.innerHTML = textoOriginal;
             }
@@ -668,12 +667,12 @@
                 document.getElementById("cliente-nombre").value = "";
                 renderizarCarrito();
                 setTimeout(() => { actualizarVentasTurno(); cargarProductosCaja(); if (typeof cargarPedidosCocina === "function") cargarPedidosCocina(); }, 500);
-            } catch (error) { console.error("Error:", error); alert("❌ Error al procesar la venta"); }
+            } catch (error) { console.error("Error:", error); alert(" Error al procesar"); }
         }
 
         async function actualizarVentasTurno() {
             try {
-                let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
+                let ventas = await fetchRapido(API_URL + "?action=getVentas");
                 ventasCache = ventas; ultimaActualizacionCache = Date.now();
                 let indiceCorte = Number(localStorage.getItem('zoe_indice_corte')) || 0;
                 if (indiceCorte > ventas.length) { indiceCorte = 0; localStorage.setItem('zoe_indice_corte', 0); }
@@ -694,7 +693,7 @@
         async function marcarRendido() {
             if (confirm("¿Confirmar cierre de turno?")) {
                 try {
-                    let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
+                    let ventas = await fetchRapido(API_URL + "?action=getVentas");
                     localStorage.setItem('zoe_indice_corte', ventas.length);
                     document.getElementById('ventas-turno-total').textContent = "0 Gs.";
                     document.getElementById('ventas-cierre-total').textContent = "0 Gs.";
@@ -705,7 +704,7 @@
 
         async function cargarPedidosCocina() {
             try {
-                let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
+                let ventas = await fetchRapido(API_URL + "?action=getVentas");
                 ventasCache = ventas; ultimaActualizacionCache = Date.now();
                 let html = "";
                 let pedidosVisibles = ventas.slice(-30).filter(v => {
@@ -766,7 +765,7 @@
                 const texto = await res.text();
                 let resultado;
                 try { resultado = JSON.parse(texto); } catch (e) { alert("❌ Error"); return; }
-                if (resultado.status !== "success") { alert(" " + (resultado.mensaje || "Error")); return; }
+                if (resultado.status !== "success") { alert("❌ " + (resultado.mensaje || "Error")); return; }
                 ventasCache = []; ultimaActualizacionCache = null;
                 await cargarPedidosCocina();
                 alert("✅ Pedido realizado");
@@ -789,7 +788,7 @@
 
         async function cargarStock() {
             try {
-                let productos = await fetchConReintentos(API_URL + "?action=getStock");
+                let productos = await fetchRapido(API_URL + "?action=getStock");
                 let html = "";
                 productos.forEach(p => {
                     let id = p.ID || p.id || "";
@@ -833,7 +832,7 @@
         function previsualizarImagenLocal(event) {
             let file = event.target.files[0];
             if (!file) return;
-            if (!file.type.startsWith('image/')) { alert("⚠️ Debe ser una imagen"); return; }
+            if (!file.type.startsWith('image/')) { alert("⚠️ Debe ser imagen"); return; }
             let reader = new FileReader();
             reader.onload = function(e) {
                 let img = new Image();
@@ -850,8 +849,7 @@
                     let placeholder = document.getElementById('img-preview-placeholder');
                     let tamanoInfo = document.getElementById('img-tamano-info');
                     preview.src = imagenBase64; preview.style.display = "block"; placeholder.style.display = "none";
-                    let tamanoKB = Math.round(imagenBase64.length / 1024);
-                    tamanoInfo.textContent = `Tamaño: ${tamanoKB} KB`;
+                    tamanoInfo.textContent = `Tamaño: ${Math.round(imagenBase64.length / 1024)} KB`;
                     tamanoInfo.classList.remove('d-none');
                     document.getElementById('img-prod-url').value = "";
                 };
@@ -867,7 +865,7 @@
             let tamanoInfo = document.getElementById('img-tamano-info');
             if (url) {
                 preview.src = url; preview.style.display = "block"; placeholder.style.display = "none"; tamanoInfo.classList.add('d-none');
-                preview.onerror = function() { this.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = "❌ Error al cargar"; };
+                preview.onerror = function() { this.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = "❌ Error"; };
                 imagenBase64 = "";
             } else { preview.style.display = "none"; placeholder.style.display = "block"; placeholder.textContent = "La imagen aparecerá aquí"; }
         }
@@ -877,7 +875,7 @@
             let nombre = document.getElementById('img-prod-nombre').value;
             let url = document.getElementById('img-prod-url').value.trim();
             let imagenAGuardar = imagenBase64 || url;
-            if (!imagenAGuardar) { alert("⚠️ Selecciona una imagen"); return; }
+            if (!imagenAGuardar) { alert("️ Selecciona imagen"); return; }
             if (imagenAGuardar.startsWith('data:image') && imagenAGuardar.length > 45000) { alert("⚠️ Imagen muy grande"); return; }
             try {
                 const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "actualizarImagenProducto", id: id, nombre: nombre, imagen: imagenAGuardar }) });
@@ -889,11 +887,11 @@
                     alert("✅ Imagen guardada");
                     cargarStock(); cargarProductosCaja();
                 } else { alert("❌ " + (resultado.mensaje || "Error")); }
-            } catch (e) { console.error(e); alert("❌ Error de conexión"); }
+            } catch (e) { console.error(e); alert("❌ Error"); }
         }
 
         async function abrirModalReceta(productoId, productoNombre) {
-            let productos = await fetchConReintentos(API_URL + "?action=getStock");
+            let productos = await fetchRapido(API_URL + "?action=getStock");
             let ingredientes = productos.filter(p => (p.Categoria || "").toLowerCase() === "ingrediente");
             let producto = productos.find(p => p.ID === productoId);
             let recetaActual = producto.Receta || [];
@@ -1001,40 +999,72 @@
         async function calcularBalance() {
             let filtroMes = document.getElementById('filtro-mes').value;
             let filtroDia = document.getElementById('filtro-dia').value;
+            
+            document.getElementById('balance-ventas').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            document.getElementById('balance-gastos').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            document.getElementById('balance-neto').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            
             try {
-                let ventas = await fetchConReintentos(API_URL + "?action=getVentas");
+                let ventas;
+                if (!filtroMes && !filtroDia && ventasCache.length > 0 && ultimaActualizacionCache && (Date.now() - ultimaActualizacionCache < 30000)) {
+                    ventas = ventasCache;
+                } else {
+                    ventas = await fetchRapido(API_URL + "?action=getVentas");
+                    if (!filtroMes && !filtroDia) {
+                        ventasCache = ventas;
+                        ultimaActualizacionCache = Date.now();
+                    }
+                }
+                
                 let totalVentas = 0;
-                ventas.forEach(v => {
+                let totalGastos = 0;
+                
+                for (let v of ventas) {
                     let estado = String(v.Estado || v.ESTADO || v.estado || "").trim().toLowerCase();
                     if (estado !== "cancelado" && estado !== "archivado") {
                         let fechaOriginal = v.Fecha || v.FECHA || v.fecha || "";
                         let fechaNorm = normalizarFecha(fechaOriginal);
                         let pasaFiltro = true;
-                        if (filtroDia) { if (fechaNorm !== filtroDia) pasaFiltro = false; } 
-                        else if (filtroMes) { if (!fechaNorm || !fechaNorm.startsWith(filtroMes)) pasaFiltro = false; }
+                        if (filtroDia && fechaNorm !== filtroDia) pasaFiltro = false;
+                        else if (filtroMes && (!fechaNorm || !fechaNorm.startsWith(filtroMes))) pasaFiltro = false;
                         if (pasaFiltro) {
                             let totalStr = String(v.Total || v.TOTAL || v.total || "0");
                             totalVentas += Number(totalStr.replace(/[^0-9]/g, "")) || 0;
                         }
                     }
-                });
-                let gastos = await fetchConReintentos(API_URL + "?action=getGastos");
-                let totalGastos = 0;
-                gastos.forEach(g => {
-                    let fechaOriginal = g.Fecha || g.FECHA || g.fecha || "";
-                    let fechaNorm = normalizarFecha(fechaOriginal);
-                    let pasaFiltro = true;
-                    if (filtroDia) { if (fechaNorm !== filtroDia) pasaFiltro = false; } 
-                    else if (filtroMes) { if (!fechaNorm || !fechaNorm.startsWith(filtroMes)) pasaFiltro = false; }
-                    if (pasaFiltro) totalGastos += Number(g.Monto || g.MONTO || g.monto || 0) || 0;
-                });
+                }
+                
+                if (!filtroMes && !filtroDia && gastosCache && (Date.now() - gastosCacheTime < 30000)) {
+                    totalGastos = gastosCacheTotal;
+                } else {
+                    let gastos = await fetchRapido(API_URL + "?action=getGastos");
+                    for (let g of gastos) {
+                        let fechaOriginal = g.Fecha || g.FECHA || g.fecha || "";
+                        let fechaNorm = normalizarFecha(fechaOriginal);
+                        let pasaFiltro = true;
+                        if (filtroDia && fechaNorm !== filtroDia) pasaFiltro = false;
+                        else if (filtroMes && (!fechaNorm || !fechaNorm.startsWith(filtroMes))) pasaFiltro = false;
+                        if (pasaFiltro) totalGastos += Number(g.Monto || g.MONTO || g.monto || 0) || 0;
+                    }
+                    if (!filtroMes && !filtroDia) {
+                        gastosCache = gastos;
+                        gastosCacheTotal = totalGastos;
+                        gastosCacheTime = Date.now();
+                    }
+                }
+                
                 document.getElementById('balance-ventas').textContent = totalVentas.toLocaleString() + " Gs.";
                 document.getElementById('balance-gastos').textContent = totalGastos.toLocaleString() + " Gs.";
                 let neto = totalVentas - totalGastos;
                 let elNeto = document.getElementById('balance-neto');
                 elNeto.textContent = neto.toLocaleString() + " Gs.";
                 elNeto.className = neto >= 0 ? "h4 fw-bold text-success" : "h4 fw-bold text-danger";
-            } catch (e) { console.error("ERROR:", e); }
+            } catch (e) { 
+                console.error("ERROR:", e);
+                document.getElementById('balance-ventas').textContent = "Error";
+                document.getElementById('balance-gastos').textContent = "Error";
+                document.getElementById('balance-neto').textContent = "Error";
+            }
         }
 
         function inicializarBalance() { calcularBalance(); }
@@ -1052,6 +1082,7 @@
                 alert("✅ Gasto registrado");
                 document.getElementById("gasto-desc").value = "";
                 document.getElementById("gasto-monto").value = "";
+                gastosCache = null;
                 calcularBalance();
             } catch (e) { console.error(e); alert("❌ Error"); }
         }
@@ -1064,7 +1095,7 @@
             if (!forzarRecarga && cacheValido) { ventas = ventasCache; } 
             else {
                 try {
-                    ventas = await fetchConReintentos(API_URL + "?action=getVentas");
+                    ventas = await fetchRapido(API_URL + "?action=getVentas");
                     ventasCache = ventas; ultimaActualizacionCache = ahora;
                 } catch (e) {
                     document.getElementById('lista-pedidos-cancelar').innerHTML = '<div class="text-center text-danger py-4">Error</div>';
@@ -1118,7 +1149,7 @@
         }
 
         function confirmarCancelacion(ordenId, cliente) {
-            if (confirm(`️ ¿Cancelar pedido #${ordenId}?\n\nCliente: ${cliente}`)) {
+            if (confirm(`⚠️ ¿Cancelar pedido #${ordenId}?\n\nCliente: ${cliente}`)) {
                 cancelarDesdeCaja(ordenId);
             }
         }
